@@ -6,7 +6,8 @@
 	"type": "module",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
-		"start": "node src/main.js"
+		"start": "node dist/main.js",
+		"dev": "tsc -w"
 	},
 	"repository": {
 		"type": "git",
@@ -27,5 +28,14 @@
 	"bugs": {
 		"url": "https://github.com/sahil-kd/Leetcode_version_control/issues"
 	},
-	"homepage": "https://github.com/sahil-kd/Leetcode_version_control#readme"
+	"homepage": "https://github.com/sahil-kd/Leetcode_version_control#readme",
+	"dependencies": {
+		"chalk": "^5.3.0",
+		"inquirer": "^9.2.7"
+	},
+	"devDependencies": {
+		"@types/inquirer": "^9.0.3",
+		"@types/node": "^20.4.0",
+		"typescript": "^5.1.6"
+	}
 }
