@@ -8,7 +8,7 @@
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"start": "node dist/main.js",
 		"dev": "tsc -w",
-		"lib": "tsc --declaration src/dev_modules/file_n_path_ops.ts"
+		"lib": "tsc --declaration src/modules/file_n_path_ops.ts"
 	},
 	"repository": {
 		"type": "git",

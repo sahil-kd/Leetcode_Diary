@@ -1,17 +1,8 @@
-import { join, extname } from "path";
-import {
-	realpathSync,
-	access,
-	constants,
-	readdir,
-	stat,
-	writeFile,
-	mkdir,
-} from "fs";
-import { freemem, totalmem, homedir, tmpdir } from "os";
+import { join, extname, dirname } from "node:path";
+import { realpathSync, access, constants, readdir, stat, writeFile, mkdir } from "node:fs";
+import { freemem, totalmem, homedir, tmpdir } from "node:os";
 
-// opendir();
-// path.extname("C:\\Users\\dell\\Desktop\\CSS experiments\\Ignored file.txt") --> .txt
+// fs.opendir();
 // path.dirname("C:\\Users\\dell\\Desktop\\CSS experiments\\Ignored file.txt") --> Parent dir path = C:\\Users\\dell\\Desktop\\CSS experiments
 // path.basename("C:\\Users\\dell\\Desktop\\CSS experiments\\Ignored file.txt") --> Ignored fileURLToPath.txt
 // Operating system type --> os.type() returns Linux - Linux | MacOS - Darwin | Windows - Windows_NT
@@ -19,6 +10,8 @@ import { freemem, totalmem, homedir, tmpdir } from "os";
 // 	"An estimate of the default amount of parallelism a program should use: ",
 // 	os.availableParallelism()
 // ); // outputs 4
+
+/* Section: Memory stats section */
 
 export function getMemoryLog(getLog: boolean = true) {
 	const node_free_mem = parseFloat(String(freemem())); // free memory available to node processes (in bytes)
@@ -38,19 +31,31 @@ export function getMemoryLog(getLog: boolean = true) {
 		free_memory_bytes: node_free_mem,
 		free_memory_percent: (node_free_mem / node_total_mem) * 100,
 	};
-} // Free memory varies with time even when static
+} // Free memory varies with time even when static --> from "os"
+
+/* Section: Major directory paths section */
+
+export function getUserHomeDirPath(): string {
+	return homedir();
+} // --> from "os" & "path"
 
 export function getDesktopDirPath(): string {
 	return join(homedir(), "Desktop");
-}
+} // --> from "os" & "path"
 
 export function getTempDirPath(): string {
 	return tmpdir();
-} // %temp% dir path
+} // %temp% dir path --> from "os"
 
 export function currentDir(): string {
 	return realpathSync(".");
-} // current directory path
+} // current directory path --> from "fs"
+
+export function getFileExtension(filePath: string): string {
+	return extname(filePath);
+} // --> from "path"
+
+/* Section: Path existence & file/folder search operations */
 
 export function pathExists(path: string): Promise<boolean> {
 	return new Promise((resolve) => {
@@ -62,12 +67,9 @@ export function pathExists(path: string): Promise<boolean> {
 			}
 		});
 	});
-}
+} // --> from "fs"
 
-export function searchFileExists(
-	targetFileName: string,
-	directoryPath: string
-): Promise<boolean> {
+export function searchFileExists(targetFileName: string, directoryPath: string): Promise<boolean> {
 	return new Promise((resolve, reject) => {
 		readdir(directoryPath, (err, files) => {
 			if (err) {
@@ -79,12 +81,9 @@ export function searchFileExists(
 			resolve(result);
 		});
 	});
-}
+} // --> from "fs"
 
-export function searchDirExists(
-	targetDirectoryName: string,
-	parentDirectoryPath: string
-): Promise<boolean> {
+export function searchDirExists(targetDirectoryName: string, parentDirectoryPath: string): Promise<boolean> {
 	return new Promise((resolve, reject) => {
 		readdir(parentDirectoryPath, (err, files) => {
 			if (err) {
@@ -95,12 +94,9 @@ export function searchDirExists(
 			resolve(exists);
 		});
 	});
-}
+} // --> from "fs"
 
-export function getFileExtension(filePath: string) {
-	const extension = extname(filePath);
-	return extension;
-}
+/* Section: File or folder identification */
 
 export function isTargetFileOrDir(path: string): Promise<string> {
 	return new Promise((resolve, reject) => {
@@ -118,19 +114,27 @@ export function isTargetFileOrDir(path: string): Promise<string> {
 			}
 		});
 	});
-}
+} // --> from "fs"
+
+/* Section: File or folder creation process */
 
 export function createFile(path: string): Promise<boolean> {
 	return new Promise((resolve, reject) => {
-		writeFile(path, "", (err) => {
+		mkdir(dirname(path), { recursive: true }, (err) => {
 			if (err) {
-				reject("createFile --> " + err.message);
+				reject("mkdir error --> " + err.message);
 				return;
 			}
-			resolve(true); // file successfully created
+			writeFile(path, "", (err) => {
+				if (err) {
+					reject("createFile --> " + err.message);
+					return;
+				}
+				resolve(true); // file successfully created
+			});
 		});
 	});
-} // path = path/to/new/file.txt
+} // path = path/to/new/file.txt --> from "fs"
 
 export function createDir(path: string): Promise<boolean> {
 	return new Promise((resolve, reject) => {
@@ -140,7 +144,12 @@ export function createDir(path: string): Promise<boolean> {
 				return;
 			}
 			resolve(true);
-			console.log("Directory created successfully!");
 		});
 	});
-} // path = path/to/new/directory
+} // path = path/to/new/directory --> from "fs"
+
+/* Path operations */
+
+export function joinPath(parentpath: string, ...childpath: string[]) {
+	return join(parentpath, ...childpath);
+}

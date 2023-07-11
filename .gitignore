@@ -1,3 +1,4 @@
 #ignores all .env files
 *.env
 rough.ts
+types.d.ts

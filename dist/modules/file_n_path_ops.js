@@ -1,6 +1,6 @@
-import { join, extname } from "path";
-import { realpathSync, access, constants, readdir, stat, writeFile, mkdir, } from "fs";
-import { freemem, totalmem, homedir, tmpdir } from "os";
+import { join, extname, dirname } from "node:path";
+import { realpathSync, access, constants, readdir, stat, writeFile, mkdir } from "node:fs";
+import { freemem, totalmem, homedir, tmpdir } from "node:os";
 export function getMemoryLog(getLog = true) {
     const node_free_mem = parseFloat(String(freemem()));
     const node_total_mem = parseFloat(String(totalmem()));
@@ -14,6 +14,9 @@ export function getMemoryLog(getLog = true) {
         free_memory_percent: (node_free_mem / node_total_mem) * 100,
     };
 }
+export function getUserHomeDirPath() {
+    return homedir();
+}
 export function getDesktopDirPath() {
     return join(homedir(), "Desktop");
 }
@@ -22,6 +25,9 @@ export function getTempDirPath() {
 }
 export function currentDir() {
     return realpathSync(".");
+}
+export function getFileExtension(filePath) {
+    return extname(filePath);
 }
 export function pathExists(path) {
     return new Promise((resolve) => {
@@ -60,10 +66,6 @@ export function searchDirExists(targetDirectoryName, parentDirectoryPath) {
         });
     });
 }
-export function getFileExtension(filePath) {
-    const extension = extname(filePath);
-    return extension;
-}
 export function isTargetFileOrDir(path) {
     return new Promise((resolve, reject) => {
         stat(path, (err, stats) => {
@@ -85,12 +87,18 @@ export function isTargetFileOrDir(path) {
 }
 export function createFile(path) {
     return new Promise((resolve, reject) => {
-        writeFile(path, "", (err) => {
+        mkdir(dirname(path), { recursive: true }, (err) => {
             if (err) {
-                reject("createFile --> " + err.message);
+                reject("mkdir error --> " + err.message);
                 return;
             }
-            resolve(true);
+            writeFile(path, "", (err) => {
+                if (err) {
+                    reject("createFile --> " + err.message);
+                    return;
+                }
+                resolve(true);
+            });
         });
     });
 }
@@ -102,7 +110,9 @@ export function createDir(path) {
                 return;
             }
             resolve(true);
-            console.log("Directory created successfully!");
         });
     });
+}
+export function joinPath(parentpath, ...childpath) {
+    return join(parentpath, ...childpath);
 }
