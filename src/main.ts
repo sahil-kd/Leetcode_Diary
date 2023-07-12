@@ -10,6 +10,7 @@
 import chalk from "chalk";
 // import inquirer from "inquirer";
 import * as f from "./modules/file_n_path_ops.js";
+import sqlite3 from "sqlite3";
 
 console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // Main App Title
 
@@ -65,6 +66,57 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 	console.log(currentDateTime);
 
 	/* End of setup process */
+
+	/* Database entry point --> later move .db to %LOCALAPPDATA% & %APPDATA% */
+
+	const db = new sqlite3.Database("./db/test.db", (err) => {
+		if (err) {
+			console.error(err.message);
+		} else {
+			console.log("Database connected");
+		}
+	});
+
+	db.run(
+		`
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT,
+			age INTEGER
+		)
+	`,
+		(err) => {
+			if (err) {
+				console.error(err.message);
+			} else {
+				console.log("Table created successfully");
+			}
+		}
+	);
+
+	db.run(
+		`
+		INSERT INTO users (name, age) VALUES (?, ?)
+	`,
+		["Sahil Dutta", 23],
+		(err) => {
+			if (err) {
+				console.error(err.message);
+			} else {
+				console.log("Inserted an entry/row");
+			}
+		}
+	);
+
+	db.close((err) => {
+		if (err) {
+			console.error(err.message);
+		} else {
+			console.log("Connection to database closed successfully");
+		}
+	});
+
+	/* Database exit point */
 })();
 
 /* *** End of main() function above *** */

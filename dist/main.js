@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import * as f from "./modules/file_n_path_ops.js";
+import sqlite3 from "sqlite3";
 console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
 (async function main() {
     f.getMemoryLog();
@@ -37,6 +38,46 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
     f.createDir(f.joinPath(tmpdirPath, "leetcodeislife", "Current session storage", "log"));
     const currentDateTime = getCurrentDateTime();
     console.log(currentDateTime);
+    const db = new sqlite3.Database("./db/test.db", (err) => {
+        if (err) {
+            console.error(err.message);
+        }
+        else {
+            console.log("Database connected");
+        }
+    });
+    db.run(`
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT,
+			age INTEGER
+		)
+	`, (err) => {
+        if (err) {
+            console.error(err.message);
+        }
+        else {
+            console.log("Table created successfully");
+        }
+    });
+    db.run(`
+		INSERT INTO users (name, age) VALUES (?, ?)
+	`, ["Sahil Dutta", 23], (err) => {
+        if (err) {
+            console.error(err.message);
+        }
+        else {
+            console.log("Inserted an entry/row");
+        }
+    });
+    db.close((err) => {
+        if (err) {
+            console.error(err.message);
+        }
+        else {
+            console.log("Connection to database closed successfully");
+        }
+    });
 })();
 function user_input(prompt) {
     return new Promise((resolve) => {
