@@ -61,6 +61,9 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 	of entry (history) (to give user a map of how many things they did between these dates and
 	what problems they did) and it clears up the %temp% files */
 
+	const currentDateTime = getCurrentDateTime();
+	console.log(currentDateTime);
+
 	/* End of setup process */
 })();
 
@@ -83,4 +86,16 @@ function user_input(prompt: string) {
 
 		process.stdin.once("data", onData);
 	});
+}
+
+function getCurrentDateTime() {
+	const now = new Date();
+	const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+	return {
+		time12hformat: now.toLocaleTimeString(),
+		time24hformat: now.toLocaleTimeString("en-US", { hour12: false }),
+		fulldate: now.toLocaleDateString(),
+		dayOfWeek: daysOfWeek[now.getDay()],
+	};
 }

@@ -32,7 +32,8 @@
 	"homepage": "https://github.com/sahil-kd/Leetcode_version_control#readme",
 	"dependencies": {
 		"chalk": "^5.3.0",
-		"inquirer": "^9.2.7"
+		"inquirer": "^9.2.7",
+		"sqlite3": "^5.1.6"
 	},
 	"devDependencies": {
 		"@types/inquirer": "^9.0.3",

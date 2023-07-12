@@ -35,6 +35,8 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
         console.log("Setup failed at LOCALAPPDATA, alternative ways to be added later");
     }
     f.createDir(f.joinPath(tmpdirPath, "leetcodeislife", "Current session storage", "log"));
+    const currentDateTime = getCurrentDateTime();
+    console.log(currentDateTime);
 })();
 function user_input(prompt) {
     return new Promise((resolve) => {
@@ -49,4 +51,14 @@ function user_input(prompt) {
         };
         process.stdin.once("data", onData);
     });
+}
+function getCurrentDateTime() {
+    const now = new Date();
+    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return {
+        time12hformat: now.toLocaleTimeString(),
+        time24hformat: now.toLocaleTimeString("en-US", { hour12: false }),
+        fulldate: now.toLocaleDateString(),
+        dayOfWeek: daysOfWeek[now.getDay()],
+    };
 }
