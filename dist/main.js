@@ -1,7 +1,14 @@
 import chalk from "chalk";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
+import { createReadStream, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
 console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
+const filePath = "../../canJump1 Leetcode - Copy.txt";
+const lineReader = createInterface({
+    input: createReadStream(filePath, "utf8"),
+    crlfDelay: Infinity,
+});
 (async function main() {
     f.getMemoryLog();
     console.log(`> pwd is ${f.currentDir()}`);
@@ -39,65 +46,63 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
     const currentDateTime = getLocalDateTime();
     console.log(currentDateTime);
     const db = new sqlite3.Database("./db/test.db", (err) => {
-        if (err) {
-            console.error("db connection error --> " + err.message);
-        }
-        else {
-            console.log("Database connected");
-        }
+        err && console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
     });
     db.serialize(() => {
         db.run(`
-		CREATE TABLE IF NOT EXISTS commit_log (
-			sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT,
-			commit_time TIME,
-			commit_date DATE
-		)
+			CREATE TABLE IF NOT EXISTS commit_log (
+				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
+				username TEXT NOT NULL,
+				commit_time TIME NOT NULL,
+				commit_date DATE NOT NULL,
+				commit_no INTEGER NOT NULL,
+				line_no INTEGER NOT NULL,
+				line_string TEXT NOT NULL,
+				commit_msg TEXT DEFAULT NULL
+			)
 		`, (err) => {
-            if (err) {
-                console.error("table-creation error --> " + err.message);
-            }
-            else {
-                console.log("Table created successfully");
-            }
+            err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
         });
-        db.run("INSERT INTO commit_log (username, commit_time, commit_date) VALUES (?, TIME(?), DATE(?))", ["Sahil Dutta", sqlLocalTime(), sqlLocalDate()], (err) => {
-            if (err) {
-                console.error("row/entry insertion error --> " + err.message);
-            }
-            else {
-                console.log("Inserted an entry/row");
-            }
+        db.run(`
+			CREATE TEMPORARY TABLE temp_file(
+				line_no INTEGER,
+				line_string TEXT
+			)
+		`, (err) => {
+            err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
         });
-        db.all("SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')", (err, rows) => {
-            if (err) {
-                console.error("table output error --> ", err.message);
-            }
-            else {
-                rows.length == 0
-                    ? console.log("No records found")
-                    : rows.forEach((entry) => {
-                        console.log(entry);
-                        console.log(`Commit-log ${entry.sl_no} --> Username: ${entry.username} | Date: ${entry.commit_date} | Time: ${entry.commit_time}`);
-                    });
-            }
+        lineReader.on("line", (line) => {
+            db.serialize(() => {
+                db.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, ["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`], (err) => {
+                    err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+                });
+            });
         });
-        db.run("DROP TABLE commit_log", (err) => {
-            if (err) {
-                console.error("table del error --> " + err.message);
-            }
-            else {
-                console.log("Table successfully deleted");
-            }
+        lineReader.on("close", () => {
+            db.serialize(() => {
+                const fileWriteStream = createWriteStream("../../output.txt");
+                db.each("SELECT line_string FROM commit_log", (err, row) => {
+                    if (err) {
+                        console.error("Error retrieving row:", err);
+                    }
+                    else {
+                        fileWriteStream.write(row.line_string + "\n");
+                    }
+                }, () => {
+                    fileWriteStream.end();
+                    console.log("\nLines written to file successfully.");
+                });
+                db.run("DROP TABLE commit_log", (err) => {
+                    err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
+                });
+                db.close((err) => {
+                    err && console.log(chalk.red("AppError: db disconnection error --> " + err.message));
+                });
+            });
         });
-        db.close((err) => {
-            if (err) {
-                console.error("db exit error --> " + err.message);
-            }
-            else {
-                console.log("Connection to database closed successfully");
-            }
+        lineReader.on("error", (err) => {
+            console.error("Error reading the file:", err);
         });
     });
 })();

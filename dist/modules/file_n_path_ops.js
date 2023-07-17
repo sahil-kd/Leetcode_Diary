@@ -1,6 +1,7 @@
 import { join, extname, dirname } from "node:path";
-import { realpathSync, access, constants, readdir, stat, writeFile, mkdir } from "node:fs";
+import { realpathSync, access, constants, readdir, stat, writeFile, mkdir, createReadStream } from "node:fs";
 import { freemem, totalmem, homedir, tmpdir } from "node:os";
+import { createInterface } from "node:readline";
 export function getMemoryLog(getLog = true) {
     const node_free_mem = parseFloat(String(freemem()));
     const node_total_mem = parseFloat(String(totalmem()));
@@ -115,4 +116,14 @@ export function createDir(path) {
 }
 export function joinPath(parentpath, ...childpath) {
     return join(parentpath, ...childpath);
+}
+export function readFileLineByLine(filePath, processEachLineCallback) {
+    const fileStream = createReadStream(filePath, "utf-8");
+    const rl = createInterface({
+        input: fileStream,
+        crlfDelay: Infinity,
+    });
+    rl.on("line", processEachLineCallback);
+    rl.on("close", () => {
+    });
 }

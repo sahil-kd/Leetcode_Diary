@@ -1,6 +1,7 @@
 import { join, extname, dirname } from "node:path";
-import { realpathSync, access, constants, readdir, stat, writeFile, mkdir } from "node:fs";
+import { realpathSync, access, constants, readdir, stat, writeFile, mkdir, createReadStream } from "node:fs";
 import { freemem, totalmem, homedir, tmpdir } from "node:os";
+import { createInterface } from "node:readline";
 
 // fs.opendir();
 // path.dirname("C:\\Users\\dell\\Desktop\\CSS experiments\\Ignored file.txt") --> Parent dir path = C:\\Users\\dell\\Desktop\\CSS experiments
@@ -152,4 +153,23 @@ export function createDir(path: string): Promise<boolean> {
 
 export function joinPath(parentpath: string, ...childpath: string[]) {
 	return join(parentpath, ...childpath);
+}
+
+export function readFileLineByLine(filePath: string, processEachLineCallback: (line: string) => void) {
+	// Create a readable stream to read the file
+	const fileStream = createReadStream(filePath, "utf-8");
+
+	// Create a readline interface
+	const rl = createInterface({
+		input: fileStream,
+		crlfDelay: Infinity, // To handle both Unix and Windows line endings
+	});
+
+	// Read the file line by line
+	rl.on("line", processEachLineCallback);
+
+	// Close the readline interface and the file stream after reading
+	rl.on("close", () => {
+		// console.log("File reading completed.");
+	});
 }

@@ -11,8 +11,16 @@ import chalk from "chalk";
 // import inquirer from "inquirer";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
+import { createReadStream, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
 
 console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // Main App Title
+
+const filePath = "../../canJump1 Leetcode - Copy.txt";
+const lineReader = createInterface({
+	input: createReadStream(filePath, "utf8"),
+	crlfDelay: Infinity, // To handle both Unix and Windows line endings
+});
 
 /* *** main() function below *** */
 
@@ -67,6 +75,10 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 
 	/* End of setup process */
 
+	// f.readFileLineByLine("../../canJump1 Leetcode - Copy.txt", (line) => {
+	// 	console.log(line);
+	// });
+
 	/* Database entry point --> later move .db to %LOCALAPPDATA% & %APPDATA% --> No need to abstract as in if-else in else we can run code on success & is faster */
 
 	interface userCommitLogEntry {
@@ -74,77 +86,141 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 		username: string;
 		commit_time: string;
 		commit_date: string;
+		commit_no: number;
+		line_no: number;
+		line_string: string;
+		commit_msg: string | null;
 	} // Type of row / entry into the table --> each attr is a column
 
 	const db = new sqlite3.Database("./db/test.db", (err) => {
-		if (err) {
-			console.error("db connection error --> " + err.message);
-		} else {
-			console.log("Database connected");
-		}
+		err && console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
 	}); // Establishing a connection between this node process and SQLite3 Database
 
 	db.serialize(() => {
 		db.run(
 			`
-		CREATE TABLE IF NOT EXISTS commit_log (
-			sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT,
-			commit_time TIME,
-			commit_date DATE
-		)
+			CREATE TABLE IF NOT EXISTS commit_log (
+				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
+				username TEXT NOT NULL,
+				commit_time TIME NOT NULL,
+				commit_date DATE NOT NULL,
+				commit_no INTEGER NOT NULL,
+				line_no INTEGER NOT NULL,
+				line_string TEXT NOT NULL,
+				commit_msg TEXT DEFAULT NULL
+			)
 		`,
 			(err) => {
-				if (err) {
-					console.error("table-creation error --> " + err.message);
-				} else {
-					console.log("Table created successfully");
-				}
+				err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
 			}
 		); // Creation of a table (mini-database)
 
 		db.run(
-			"INSERT INTO commit_log (username, commit_time, commit_date) VALUES (?, TIME(?), DATE(?))",
-			["Sahil Dutta", sqlLocalTime(), sqlLocalDate()],
+			`
+			CREATE TEMPORARY TABLE temp_file(
+				line_no INTEGER,
+				line_string TEXT
+			)
+		`,
 			(err) => {
-				if (err) {
-					console.error("row/entry insertion error --> " + err.message);
-				} else {
-					console.log("Inserted an entry/row");
-				}
+				err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
 			}
-		); // Insert a row/entry into the table/database
+		);
 
-		db.all("SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')", (err, rows: userCommitLogEntry[]) => {
-			if (err) {
-				console.error("table output error --> ", err.message);
-			} else {
-				rows.length == 0
-					? console.log("No records found")
-					: rows.forEach((entry) => {
-							console.log(entry);
-							console.log(
-								`Commit-log ${entry.sl_no} --> Username: ${entry.username} | Date: ${entry.commit_date} | Time: ${entry.commit_time}`
-							);
-					  });
-			}
-		}); // Display entire table or list of sorted/filtered rows
+		// db.run(
+		// 	`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+		// 	VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
+		// 	["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, "This is line 1"],
+		// 	(err) => {
+		// 		err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+		// 	}
+		// ); // Insert a row/entry into the table/database
 
-		db.run("DROP TABLE commit_log", (err) => {
-			if (err) {
-				console.error("table del error --> " + err.message);
-			} else {
-				console.log("Table successfully deleted");
-			}
-		}); // delete the table named users
+		// let c = 1;
 
-		db.close((err) => {
-			if (err) {
-				console.error("db exit error --> " + err.message);
-			} else {
-				console.log("Connection to database closed successfully");
-			}
-		}); // Close connection to the database
+		// f.readFileLineByLine("../../canJump1 Leetcode - Copy.txt", (line) => {
+		// 	db.serialize(() => {
+		// 		db.run(
+		// 			`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+		// 			VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
+		// 			["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
+		// 			(err) => {
+		// 				err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+		// 			}
+		// 		);
+		// 	});
+		// 	// c++;
+		// });
+
+		lineReader.on("line", (line) => {
+			// Insert each line into the table
+			db.serialize(() => {
+				db.run(
+					`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
+					["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
+					(err) => {
+						err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+					}
+				);
+			});
+		});
+
+		lineReader.on("close", () => {
+			db.serialize(() => {
+				// // eg: SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')
+				// db.all("SELECT * FROM commit_log", (err, rows: userCommitLogEntry[]) => {
+				// 	if (err) {
+				// 		console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+				// 	} else {
+				// 		rows.length == 0
+				// 			? console.log("No records found")
+				// 			: rows.forEach((entry) => {
+				// 					console.log(entry);
+				// 					// console.log(
+				// 					// 	`Commit-log ${entry.sl_no} --> Username: ${entry.username} | Date: ${entry.commit_date} | Time: ${entry.commit_time}`
+				// 					// );
+				// 			  });
+				// 	} // **REMINDER: to replace forEach with for-loop cause the later is faster than the former as the iternation becomes larger
+				// }); // Get/Fetch data from table (db) and display entire table or list of sorted/filtered rows
+
+				// const fileWriteStream = createWriteStream("../../output.txt", { flags: "a" }); // append the output file with flag 'a'
+				const fileWriteStream = createWriteStream("../../output.txt"); // overwrite the output file
+
+				db.each(
+					"SELECT line_string FROM commit_log",
+					(err, row: { line_string: string }) => {
+						if (err) {
+							console.error("Error retrieving row:", err);
+						} else {
+							fileWriteStream.write(row.line_string + "\n");
+							// console.log(row.line_string);
+						}
+					},
+					() => {
+						fileWriteStream.end();
+						console.log("\nLines written to file successfully.");
+					}
+				);
+
+				db.run("DROP TABLE commit_log", (err) => {
+					err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
+				}); // delete the table named users
+
+				db.close((err) => {
+					err && console.log(chalk.red("AppError: db disconnection error --> " + err.message));
+				}); // Close connection to the database
+			});
+		}); // if I make the lineReader "close" return a promise then I can get rid of a lot of nesting
+
+		lineReader.on("error", (err) => {
+			console.error("Error reading the file:", err);
+		});
+
+		// process.exit(); // simulating an abrupt app closure before db is gracefully disconnected, on executing this I observed both commit_log and temp table
+		// do not exits when accessed through SQLite3 terminal session, maybe SQLite3 has an internal cleaning or commit system for resolving abrupt closures
+		// since primary table also not retained hence need to store every 5-10 secs in %temp% dir with a condition if-abrupt closure occured, restore & auto-commit
+		// on next startup with a commit msg "Auto-commited due to abrupt closure" | neither was the SELECT data displayed, weird
 	}); // db.serialize() make the database process go step by step / synchronously
 
 	/* Database exit point */
