@@ -127,31 +127,6 @@ const lineReader = createInterface({
 			}
 		);
 
-		// db.run(
-		// 	`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-		// 	VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
-		// 	["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, "This is line 1"],
-		// 	(err) => {
-		// 		err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
-		// 	}
-		// ); // Insert a row/entry into the table/database
-
-		// let c = 1;
-
-		// f.readFileLineByLine("../../canJump1 Leetcode - Copy.txt", (line) => {
-		// 	db.serialize(() => {
-		// 		db.run(
-		// 			`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-		// 			VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
-		// 			["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
-		// 			(err) => {
-		// 				err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
-		// 			}
-		// 		);
-		// 	});
-		// 	// c++;
-		// });
-
 		lineReader.on("line", (line) => {
 			// Insert each line into the table
 			db.serialize(() => {
@@ -184,6 +159,11 @@ const lineReader = createInterface({
 				// 	} // **REMINDER: to replace forEach with for-loop cause the later is faster than the former as the iternation becomes larger
 				// }); // Get/Fetch data from table (db) and display entire table or list of sorted/filtered rows
 
+				const commit_data = f.readJson("./db/commit_data.json"); // retrive data as object (key-value pair) from JSON file
+				commit_data.commit_no += 1; // set the changes to staging
+				// commit_data.abrupt_exit = !commit_data.abrupt_exit; // set the changes to staging
+				f.writeJson("./db/commit_data.json", commit_data); // commit changes to the JSON file
+
 				// const fileWriteStream = createWriteStream("../../output.txt", { flags: "a" }); // append the output file with flag 'a'
 				const fileWriteStream = createWriteStream("../../output.txt"); // overwrite the output file
 
@@ -201,7 +181,7 @@ const lineReader = createInterface({
 						fileWriteStream.end();
 						console.log("\nLines written to file successfully.");
 					}
-				);
+				); // run a callback on each row of the table and a completed callback for cleanup
 
 				db.run("DROP TABLE commit_log", (err) => {
 					err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));

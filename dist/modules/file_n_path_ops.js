@@ -1,5 +1,5 @@
 import { join, extname, dirname } from "node:path";
-import { realpathSync, access, constants, readdir, stat, writeFile, mkdir, createReadStream } from "node:fs";
+import { realpathSync, access, constants, readdir, stat, writeFile, mkdir, createReadStream, writeFileSync, readFileSync, } from "node:fs";
 import { freemem, totalmem, homedir, tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 export function getMemoryLog(getLog = true) {
@@ -126,4 +126,12 @@ export function readFileLineByLine(filePath, processEachLineCallback) {
     rl.on("line", processEachLineCallback);
     rl.on("close", () => {
     });
+}
+export function readJson(filename) {
+    const data = readFileSync(filename, "utf8");
+    return JSON.parse(data);
+}
+export function writeJson(filename, data) {
+    const jsonData = JSON.stringify(data, null, 2);
+    writeFileSync(filename, jsonData, "utf8");
 }

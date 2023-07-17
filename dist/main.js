@@ -81,6 +81,9 @@ const lineReader = createInterface({
         });
         lineReader.on("close", () => {
             db.serialize(() => {
+                const commit_data = f.readJson("./db/commit_data.json");
+                commit_data.commit_no += 1;
+                f.writeJson("./db/commit_data.json", commit_data);
                 const fileWriteStream = createWriteStream("../../output.txt");
                 db.each("SELECT line_string FROM commit_log", (err, row) => {
                     if (err) {

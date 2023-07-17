@@ -1,0 +1,8 @@
+{
+	"username": "Guest",
+	"logged_in": false,
+	"quick_auth": {
+		"quick_PIN": null,
+		"token": null
+	}
+}

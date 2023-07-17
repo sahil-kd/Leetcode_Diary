@@ -1,5 +1,16 @@
 import { join, extname, dirname } from "node:path";
-import { realpathSync, access, constants, readdir, stat, writeFile, mkdir, createReadStream } from "node:fs";
+import {
+	realpathSync,
+	access,
+	constants,
+	readdir,
+	stat,
+	writeFile,
+	mkdir,
+	createReadStream,
+	writeFileSync,
+	readFileSync,
+} from "node:fs";
 import { freemem, totalmem, homedir, tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 
@@ -149,7 +160,7 @@ export function createDir(path: string): Promise<boolean> {
 	});
 } // path = path/to/new/directory --> from "fs"
 
-/* Path operations */
+/* Section: Path operations */
 
 export function joinPath(parentpath: string, ...childpath: string[]) {
 	return join(parentpath, ...childpath);
@@ -172,4 +183,18 @@ export function readFileLineByLine(filePath: string, processEachLineCallback: (l
 	rl.on("close", () => {
 		// console.log("File reading completed.");
 	});
+}
+
+/* Section: JSON file read-write operations */
+
+// Read JSON data from file.json
+export function readJson(filename: string): any {
+	const data = readFileSync(filename, "utf8");
+	return JSON.parse(data);
+}
+
+// Write JSON data to file.json
+export function writeJson(filename: string, data: any): void {
+	const jsonData = JSON.stringify(data, null, 2);
+	writeFileSync(filename, jsonData, "utf8");
 }
