@@ -3,7 +3,17 @@ import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { stdin } from "node:process";
+import { EventEmitter } from "node:events";
+class dbSerializer extends EventEmitter {
+    row_insertion_over() {
+        this.emit("row_insertion_over");
+    }
+}
+const rows_insertion_over = new dbSerializer();
+rows_insertion_over.row_insertion_over();
+rows_insertion_over.on("row_insertion_over", () => {
+    console.log("Event recieved just now");
+});
 console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`);
 (async function main() {
     f.getMemoryLog();
@@ -121,7 +131,7 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`);
     });
     const u_input3 = await user_input();
     console.log("User input: ", u_input3);
-    stdin.destroy();
+    process.stdin.destroy();
 })();
 function user_input(prompt) {
     return new Promise((resolve) => {

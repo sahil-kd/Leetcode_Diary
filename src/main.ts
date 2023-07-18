@@ -13,7 +13,40 @@ import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { stdin } from "node:process";
+import { EventEmitter } from "node:events";
+
+class dbSerializer extends EventEmitter {
+	row_insertion_over() {
+		this.emit("row_insertion_over");
+	}
+}
+
+const rows_insertion_over = new dbSerializer();
+
+rows_insertion_over.row_insertion_over(); // event emitter
+rows_insertion_over.on("row_insertion_over", () => {
+	console.log("Event recieved just now");
+}); // event listener --> can return a promise to pause program execution, eg: below
+
+/*
+	function waitForEvent() {
+	return new Promise((resolve) => {
+    myCustomEmitter.on('myEvent', (arg1, arg2) => {
+      // Event handler logic
+      resolve({ arg1, arg2 }); // Resolve the promise with the event data
+    });
+  });
+}
+
+async function myFunction() {
+  console.log('Before waiting for event');
+  const eventData = await waitForEvent();
+  console.log('Event received:', eventData.arg1, eventData.arg2);
+  console.log('After event received');
+}
+
+myFunction();
+*/
 
 console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App Title
 
@@ -221,7 +254,7 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 	console.log("User input: ", u_input3);
 
 	/* Program exit */
-	stdin.destroy(); // closing any open input stream to properly exit --> working
+	process.stdin.destroy(); // closing any open input stream to properly exit --> working
 })();
 
 /* *** End of main() function above *** */
