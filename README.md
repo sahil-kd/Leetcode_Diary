@@ -1,2 +1,2 @@
-# Leetcode_version_control
-A stylish CLI app to make Leetcoding faster and easier
+# Leetcode_Diary
+A stylish CLI version control system to make Leetcoding faster and easier
