@@ -91,10 +91,10 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 		err && console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
 	}); // Establishing a connection between this node process and SQLite3 Database
 
-	const u_input = await user_input("Enter the command: ");
+	const u_input = await user_input("\nEnter the command: ");
 	console.log("User input: ", u_input);
 
-	const u_input2 = await user_input("Enter another command: ");
+	const u_input2 = await user_input("\nEnter another command: ");
 	console.log("User input: ", u_input2);
 
 	const filePath = "../../canJump1 Leetcode - Copy.txt";
@@ -103,10 +103,9 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 		crlfDelay: Infinity, // To handle both Unix and Windows line endings
 	});
 
-	await make_async_void(() => {
-		db.serialize(() => {
-			db.run(
-				`
+	db.serialize(() => {
+		db.run(
+			`
 			CREATE TABLE IF NOT EXISTS commit_log (
 				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
 				username TEXT NOT NULL,
@@ -118,104 +117,108 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 				commit_msg TEXT DEFAULT NULL
 			)
 		`,
-				(err) => {
-					err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
-				}
-			); // Creation of a table (mini-database)
+			(err) => {
+				err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
+			}
+		); // Creation of a table (mini-database)
 
-			db.run(
-				`
+		db.run(
+			`
 			CREATE TEMPORARY TABLE temp_file(
 				line_no INTEGER,
 				line_string TEXT
 			)
 		`,
-				(err) => {
-					err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
-				}
-			);
+			(err) => {
+				err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
+			}
+		);
 
-			lineReader.on("line", (line) => {
-				// Insert each line into the table
-				db.serialize(() => {
-					db.run(
-						`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+		lineReader.on("line", (line) => {
+			// Insert each line into the table
+			db.serialize(() => {
+				db.run(
+					`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
 					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
-						["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
-						(err) => {
-							err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
-						}
-					);
-				});
+					["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
+					(err) => {
+						err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+					}
+				);
 			});
+		});
 
-			lineReader.on("close", () => {
-				db.serialize(() => {
-					// // eg: SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')
-					// db.all("SELECT * FROM commit_log", (err, rows: userCommitLogEntry[]) => {
-					// 	if (err) {
-					// 		console.log(chalk.red("AppError: Table output error --> --> " + err.message));
-					// 	} else {
-					// 		rows.length == 0
-					// 			? console.log("No records found")
-					// 			: rows.forEach((entry) => {
-					// 					console.log(entry);
-					// 					// console.log(
-					// 					// 	`Commit-log ${entry.sl_no} --> Username: ${entry.username} | Date: ${entry.commit_date} | Time: ${entry.commit_time}`
-					// 					// );
-					// 			  });
-					// 	} // **REMINDER: to replace forEach with for-loop cause the later is faster than the former as the iternation becomes larger
-					// }); // Get/Fetch data from table (db) and display entire table or list of sorted/filtered rows
+		lineReader.on("close", () => {
+			db.serialize(() => {
+				// // eg: SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')
+				// db.all("SELECT * FROM commit_log", (err, rows: userCommitLogEntry[]) => {
+				// 	if (err) {
+				// 		console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+				// 	} else {
+				// 		rows.length == 0
+				// 			? console.log("No records found")
+				// 			: rows.forEach((entry) => {
+				// 					console.log(entry);
+				// 					// console.log(
+				// 					// 	`Commit-log ${entry.sl_no} --> Username: ${entry.username} | Date: ${entry.commit_date} | Time: ${entry.commit_time}`
+				// 					// );
+				// 			  });
+				// 	} // **REMINDER: to replace forEach with for-loop cause the later is faster than the former as the iternation becomes larger
+				// }); // Get/Fetch data from table (db) and display entire table or list of sorted/filtered rows
 
-					const commit_data = f.readJson("./db/commit_data.json"); // retrive data as object (key-value pair) from JSON file
-					commit_data.commit_no += 1; // set the changes to staging
-					// commit_data.abrupt_exit = !commit_data.abrupt_exit; // set the changes to staging
-					f.writeJson("./db/commit_data.json", commit_data); // commit changes to the JSON file
+				const commit_data = f.readJson("./db/commit_data.json"); // retrive data as object (key-value pair) from JSON file
+				commit_data.commit_no += 1; // set the changes to staging
+				// commit_data.abrupt_exit = !commit_data.abrupt_exit; // set the changes to staging
+				f.writeJson("./db/commit_data.json", commit_data); // commit changes to the JSON file
 
-					// const fileWriteStream = createWriteStream("../../output.txt", { flags: "a" }); // append the output file with flag 'a'
-					const fileWriteStream = createWriteStream("../../output.txt"); // overwrite the output file
+				// const fileWriteStream = createWriteStream("../../output.txt", { flags: "a" }); // append the output file with flag 'a'
+				const fileWriteStream = createWriteStream("../../output.txt"); // overwrite the output file
 
-					db.each(
-						"SELECT line_string FROM commit_log",
-						(err, row: { line_string: string }) => {
-							if (err) {
-								console.error("Error retrieving row:", err);
-							} else {
-								fileWriteStream.write(row.line_string + "\n");
-								// console.log(row.line_string);
-							}
-						},
-						() => {
-							fileWriteStream.end();
-							console.log("\nLines written to file successfully.");
+				db.each(
+					"SELECT line_string FROM commit_log",
+					(err, row: { line_string: string }) => {
+						if (err) {
+							console.error("Error retrieving row:", err);
+						} else {
+							fileWriteStream.write(row.line_string + "\n");
+							// console.log(row.line_string);
 						}
-					); // run a callback on selected columns of each row of the table and a completed callback for cleanup
+					},
+					() => {
+						fileWriteStream.end();
+						console.log("\nLines written to file successfully.");
+					}
+				); // run a callback on selected columns of each row of the table and a completed callback for cleanup
 
-					db.run("DROP TABLE commit_log", (err) => {
-						err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
-					}); // delete the table named users
+				db.run("DROP TABLE commit_log", (err) => {
+					err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
+				}); // delete the table named users
 
-					db.close((err) => {
-						err && console.log(chalk.red("AppError: db disconnection error --> " + err.message));
-					}); // Close connection to the database
-				});
-			}); // if I make the lineReader "close" return a promise then I can get rid of a lot of nesting
-
-			lineReader.on("error", (err) => {
-				console.error("Error reading the file:", err);
+				db.close((err) => {
+					if (err) {
+						console.log(chalk.red("AppError: db disconnection error --> " + err.message));
+						console.log("\nEnter another command: "); // even when database closure was unsuccessfull
+					} else {
+						console.log("\nEnter another command: "); // after the database is closed successfully
+					}
+				}); // Close connection to the database
 			});
+		}); // if I make the lineReader "close" return a promise then I can get rid of a lot of nesting
 
-			// process.exit(); // simulating an abrupt app closure before db is gracefully disconnected, on executing this I observed both commit_log and temp table
-			// do not exits when accessed through SQLite3 terminal session, maybe SQLite3 has an internal cleaning or commit system for resolving abrupt closures
-			// since primary table also not retained hence need to store every 5-10 secs in %temp% dir with a condition if-abrupt closure occured, restore & auto-commit
-			// on next startup with a commit msg "Auto-commited due to abrupt closure" | neither was the SELECT data displayed, weird
-		}); // db.serialize() make the database process go step by step / synchronously
-	});
+		lineReader.on("error", (err) => {
+			console.error("Error reading the file:", err);
+		});
 
-	const u_input3 = await user_input("Enter another command: ");
-	console.log("User input: ", u_input3);
+		// process.exit(); // simulating an abrupt app closure before db is gracefully disconnected, on executing this I observed both commit_log and temp table
+		// do not exits when accessed through SQLite3 terminal session, maybe SQLite3 has an internal cleaning or commit system for resolving abrupt closures
+		// since primary table also not retained hence need to store every 5-10 secs in %temp% dir with a condition if-abrupt closure occured, restore & auto-commit
+		// on next startup with a commit msg "Auto-commited due to abrupt closure" | neither was the SELECT data displayed, weird
+	}); // db.serialize() make the database process go step by step / synchronously
 
 	/* Database exit point */
+
+	const u_input3 = await user_input();
+	console.log("User input: ", u_input3);
 
 	/* Program exit */
 	stdin.destroy(); // closing any open input stream to properly exit --> working
@@ -223,9 +226,9 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 
 /* *** End of main() function above *** */
 
-function user_input(prompt: string): Promise<string> {
+function user_input(prompt?: string): Promise<string> {
 	return new Promise((resolve) => {
-		console.log(prompt);
+		prompt && console.log(prompt);
 
 		const onData = (data: { toString: () => string }) => {
 			const userInput = data.toString().trim();
@@ -239,19 +242,6 @@ function user_input(prompt: string): Promise<string> {
 		};
 
 		process.stdin.once("data", onData);
-	});
-}
-
-function make_async_void(callback: (...params: any[]) => void, ...params: any[]) {
-	return new Promise<void>((resolve) => {
-		callback(...params);
-		resolve();
-	});
-}
-
-function make_async_returns<T>(callback: (...params: any[]) => T, ...params: any[]) {
-	return new Promise<T>((resolve) => {
-		resolve(callback(...params));
 	});
 }
 
