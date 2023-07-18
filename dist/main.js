@@ -4,7 +4,7 @@ import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { stdin } from "node:process";
-console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
+console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`);
 (async function main() {
     f.getMemoryLog();
     console.log(`> pwd is ${f.currentDir()}`);
