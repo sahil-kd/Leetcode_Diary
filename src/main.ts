@@ -181,7 +181,7 @@ const lineReader = createInterface({
 						fileWriteStream.end();
 						console.log("\nLines written to file successfully.");
 					}
-				); // run a callback on each row of the table and a completed callback for cleanup
+				); // run a callback on selected columns of each row of the table and a completed callback for cleanup
 
 				db.run("DROP TABLE commit_log", (err) => {
 					err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
