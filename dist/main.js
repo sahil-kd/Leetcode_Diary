@@ -1,8 +1,10 @@
 import chalk from "chalk";
+import { fromEvent, defer, EMPTY } from "rxjs";
+import { mergeMap, tap, finalize, catchError } from "rxjs/operators";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
-import { createInterface } from "node:readline";
+import { createInterface } from "readline";
 import { stdin } from "node:process";
 console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
 (async function main() {
@@ -41,21 +43,20 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
     f.createDir(f.joinPath(tmpdirPath, "leetcodeislife", "Current session storage", "log"));
     const currentDateTime = getLocalDateTime();
     console.log(currentDateTime);
+    const lineReader = createInterface({
+        input: createReadStream("../../canJump1 Leetcode - Copy.txt", "utf8"),
+        crlfDelay: Infinity,
+    });
+    const makeAsyncVoid = (callback) => defer(() => {
+        callback();
+        return EMPTY;
+    });
     const db = new sqlite3.Database("./db/test.db", (err) => {
         err && console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
     });
-    const u_input = await user_input("Enter the command: ");
-    console.log("User input: ", u_input);
-    const u_input2 = await user_input("Enter another command: ");
-    console.log("User input: ", u_input2);
-    const filePath = "../../canJump1 Leetcode - Copy.txt";
-    const lineReader = createInterface({
-        input: createReadStream(filePath, "utf8"),
-        crlfDelay: Infinity,
-    });
-    await make_async_void(() => {
-        db.serialize(() => {
-            db.run(`
+    const lineObservable = fromEvent(lineReader, "line");
+    db.serialize(() => {
+        db.run(`
 			CREATE TABLE IF NOT EXISTS commit_log (
 				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
 				username TEXT NOT NULL,
@@ -67,83 +68,68 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`);
 				commit_msg TEXT DEFAULT NULL
 			)
 		`, (err) => {
-                err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
-            });
-            db.run(`
+            err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
+        });
+        db.run(`
 			CREATE TEMPORARY TABLE temp_file(
 				line_no INTEGER,
 				line_string TEXT
 			)
 		`, (err) => {
-                err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
-            });
-            lineReader.on("line", (line) => {
-                db.serialize(() => {
-                    db.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, ["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`], (err) => {
-                        err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
-                    });
-                });
-            });
-            lineReader.on("close", () => {
-                db.serialize(() => {
-                    const commit_data = f.readJson("./db/commit_data.json");
-                    commit_data.commit_no += 1;
-                    f.writeJson("./db/commit_data.json", commit_data);
-                    const fileWriteStream = createWriteStream("../../output.txt");
-                    db.each("SELECT line_string FROM commit_log", (err, row) => {
-                        if (err) {
-                            console.error("Error retrieving row:", err);
-                        }
-                        else {
-                            fileWriteStream.write(row.line_string + "\n");
-                        }
-                    }, () => {
-                        fileWriteStream.end();
-                        console.log("\nLines written to file successfully.");
-                    });
-                    db.run("DROP TABLE commit_log", (err) => {
-                        err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
-                    });
-                    db.close((err) => {
-                        err && console.log(chalk.red("AppError: db disconnection error --> " + err.message));
-                    });
-                });
-            });
-            lineReader.on("error", (err) => {
-                console.error("Error reading the file:", err);
-            });
+            err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
         });
     });
-    const u_input3 = await user_input("Enter another command: ");
-    console.log("User input: ", u_input3);
+    lineObservable
+        .pipe(mergeMap((line) => makeAsyncVoid(() => {
+        db.serialize(() => {
+            db.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+							VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, ["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`], (err) => {
+                err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+            });
+        });
+    })), tap((line) => {
+        console.log("-" + line);
+    }), finalize(() => {
+        lineReader.close();
+        db.serialize(() => {
+            const commit_data = f.readJson("./db/commit_data.json");
+            commit_data.commit_no += 1;
+            f.writeJson("./db/commit_data.json", commit_data);
+            const fileWriteStream = createWriteStream("../../output.txt");
+            db.each("SELECT line_string FROM commit_log", (err, row) => {
+                if (err) {
+                    console.error("Error retrieving row:", err);
+                }
+                else {
+                    fileWriteStream.write(row.line_string + "\n");
+                }
+            }, () => {
+                fileWriteStream.end();
+                console.log("\nLines written to file successfully.");
+            });
+            db.run("DROP TABLE commit_log", (err) => {
+                err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
+            });
+            db.close((err) => {
+                err && console.log(chalk.red("AppError: db disconnection error --> " + err.message));
+            });
+        });
+    }), catchError((error) => {
+        console.error("Error reading the file:", error);
+        return EMPTY;
+    }))
+        .subscribe({
+        next: (line) => {
+        },
+        error: (error) => {
+            console.error("Subscription error:", error);
+        },
+        complete: () => {
+            console.log("Subscription complete");
+        },
+    });
     stdin.destroy();
 })();
-function user_input(prompt) {
-    return new Promise((resolve) => {
-        console.log(prompt);
-        const onData = (data) => {
-            const userInput = data.toString().trim();
-            resolve(userInput);
-            cleanup();
-        };
-        const cleanup = () => {
-            process.stdin.off("data", onData);
-        };
-        process.stdin.once("data", onData);
-    });
-}
-function make_async_void(callback, ...params) {
-    return new Promise((resolve) => {
-        callback(...params);
-        resolve();
-    });
-}
-function make_async_returns(callback, ...params) {
-    return new Promise((resolve) => {
-        resolve(callback(...params));
-    });
-}
 function getLocalDateTime() {
     const now = new Date();
     const date = now.getDate();
@@ -179,11 +165,4 @@ function sqlLocalDate() {
     const month = now.getMonth() + 1;
     const date = now.getDate();
     return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
-}
-function insertEntry(db, sqlquery, params) {
-    db.run(sqlquery, params, (err) => {
-        if (err) {
-            console.error("row/entry insertion error --> " + err.message);
-        }
-    });
 }

@@ -1,20 +1,11 @@
-/*
-    Core ts dev guide:
-    a) run ts in watch mode using tsc -w or, npm run dev | Ctrl + C to exit mode
-    b) after running tsc -w, add new terminal with '+' icon, now you can use git bash while
-       previous terminal takes care of watching changes in ts file on each save, or set ts
-       watch mode on one terminal & use git bash cli app -> easier to switch
-    c) use Prettier
-    d) run npm start
-*/
 import chalk from "chalk";
-// import inquirer from "inquirer";
+import { fromEvent, defer, EMPTY } from "rxjs";
+import { mergeMap, tap, finalize, catchError } from "rxjs/operators";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
-import { createInterface } from "node:readline";
+import { createInterface } from "readline";
 import { stdin } from "node:process";
-import { resolve } from "node:path";
 
 console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // Main App Title
 
@@ -22,7 +13,6 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 
 (async function main() {
 	f.getMemoryLog();
-	// console.log("File extension: ", "" === f.getFileExtension("_folder_name")); // returns true
 	console.log(`> pwd is ${f.currentDir()}`);
 
 	/* Setup process */
@@ -30,7 +20,6 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 	const programFilesPath = process.env.PROGRAMFILES;
 	if (programFilesPath) {
 		console.log("Program Files Path:", programFilesPath);
-		// f.createDir(f.joinPath(programFilesPath, "Userdata")); // Permission not granted to read and write
 	} else {
 		console.log("env variable couldn't be set up, alternative setups to be added later");
 	}
@@ -41,73 +30,64 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 
 	if (appDataPath) {
 		f.createDir(f.joinPath(appDataPath, "Leetcodeislife", "Local storage"));
-		f.createDir(f.joinPath(appDataPath, "Leetcodeislife", "Session storage")); // unlike "Current session storage" here it's incrementally updated every 5-10 mins
+		f.createDir(f.joinPath(appDataPath, "Leetcodeislife", "Session storage"));
 		f.createDir(f.joinPath(appDataPath, "Leetcodeislife", "Network"));
-		f.createDir(f.joinPath(appDataPath, "Leetcodeislife", "Local state")); // --> user profile during --> dictionary (database for user info)
+		f.createDir(f.joinPath(appDataPath, "Leetcodeislife", "Local state"));
 		f.createDir(f.joinPath(appDataPath, "Leetcodeislife", "Previous session logs"));
 	} else {
 		console.log("Setup failed at APPDATA, alternative ways to be added later");
 	}
 
 	if (cachePath) {
-		f.createDir(f.joinPath(cachePath, "Leetcodeislife", "Current session state")); // engagement record --> user activity analytics
+		f.createDir(f.joinPath(cachePath, "Leetcodeislife", "Current session state"));
 		f.createDir(f.joinPath(cachePath, "Leetcodeislife", "User activity profile"));
 		f.createDir(f.joinPath(cachePath, "Leetcodeislife", "Current session variables"));
 		f.createDir(f.joinPath(cachePath, "Leetcodeislife", "Current session map"));
-		f.createDir(f.joinPath(cachePath, "Leetcodeislife", "Previous session logs")); // a backup copy if in APPDATA not found previous logs
+		f.createDir(f.joinPath(cachePath, "Leetcodeislife", "Previous session logs"));
 	} else {
 		console.log("Setup failed at LOCALAPPDATA, alternative ways to be added later");
 	}
 
 	f.createDir(f.joinPath(tmpdirPath, "leetcodeislife", "Current session storage", "log"));
+
 	/* logs stored/updated every few secs, incase of abrupt exit logs remain stored
-	there and in the next session logs are automtically recovered if abrupt_exit=true, when 
-	session ends it transfers logs from %temp% to previous session logs with dates and time
-	of entry (history) (to give user a map of how many things they did between these dates and
-	what problems they did) and it clears up the %temp% files */
+  there and in the next session logs are automtically recovered if abrupt_exit=true, when 
+  session ends it transfers logs from %temp% to previous session logs with dates and time
+  of entry (history) (to give user a map of how many things they did between these dates and
+  what problems they did) and it clears up the %temp% files */
 
 	const currentDateTime = getLocalDateTime();
 	console.log(currentDateTime);
 
 	/* End of setup process */
 
-	// f.readFileLineByLine("../../canJump1 Leetcode - Copy.txt", (line) => {
-	// 	console.log(line);
-	// });
+	const lineReader = createInterface({
+		input: createReadStream("../../canJump1 Leetcode - Copy.txt", "utf8"),
+		crlfDelay: Infinity, // To handle both Unix and Windows line endings
+	});
 
-	/* Database entry point --> later move .db to %LOCALAPPDATA% & %APPDATA% --> No need to abstract as in if-else in else we can run code on success & is faster */
-
-	interface userCommitLogEntry {
-		sl_no: number;
-		username: string;
-		commit_time: string;
-		commit_date: string;
-		commit_no: number;
-		line_no: number;
-		line_string: string;
-		commit_msg: string | null;
-	} // Type of row / entry into the table --> each attr is a column
+	const makeAsyncVoid = (callback: () => void) =>
+		defer(() => {
+			callback();
+			return EMPTY;
+		});
 
 	const db = new sqlite3.Database("./db/test.db", (err) => {
 		err && console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
 	}); // Establishing a connection between this node process and SQLite3 Database
 
-	const u_input = await user_input("Enter the command: ");
-	console.log("User input: ", u_input);
+	// const dbPromise = defer(
+	// 	() =>
+	// 		new Promise((resolve) => {
+	// 			resolve(db);
+	// 		})
+	// );
 
-	const u_input2 = await user_input("Enter another command: ");
-	console.log("User input: ", u_input2);
+	const lineObservable = fromEvent(lineReader, "line");
 
-	const filePath = "../../canJump1 Leetcode - Copy.txt";
-	const lineReader = createInterface({
-		input: createReadStream(filePath, "utf8"),
-		crlfDelay: Infinity, // To handle both Unix and Windows line endings
-	});
-
-	await make_async_void(() => {
-		db.serialize(() => {
-			db.run(
-				`
+	db.serialize(() => {
+		db.run(
+			`
 			CREATE TABLE IF NOT EXISTS commit_log (
 				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
 				username TEXT NOT NULL,
@@ -119,38 +99,52 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 				commit_msg TEXT DEFAULT NULL
 			)
 		`,
-				(err) => {
-					err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
-				}
-			); // Creation of a table (mini-database)
+			(err) => {
+				err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
+			}
+		); // Creation of a table (mini-database)
 
-			db.run(
-				`
+		db.run(
+			`
 			CREATE TEMPORARY TABLE temp_file(
 				line_no INTEGER,
 				line_string TEXT
 			)
 		`,
-				(err) => {
-					err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
-				}
-			);
+			(err) => {
+				err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
+			}
+		);
+	});
 
-			lineReader.on("line", (line) => {
-				// Insert each line into the table
-				db.serialize(() => {
-					db.run(
-						`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
-						["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
-						(err) => {
-							err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
-						}
-					);
-				});
-			});
+	// A lot of deprecated stuff in RxJS, have to look into this later
 
-			lineReader.on("close", () => {
+	lineObservable
+		.pipe(
+			mergeMap((line) =>
+				makeAsyncVoid(() => {
+					// Perform database operations or other async tasks
+					// Reading lines from .txt file and inserting them into table
+					db.serialize(() => {
+						db.run(
+							`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+							VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
+							["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
+							(err) => {
+								err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+							}
+						);
+					});
+				})
+			),
+			tap((line) => {
+				// Additional processing for each line
+				// ...
+				console.log("-" + line);
+			}),
+			finalize(() => {
+				lineReader.close();
+
 				db.serialize(() => {
 					// // eg: SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')
 					// db.all("SELECT * FROM commit_log", (err, rows: userCommitLogEntry[]) => {
@@ -200,61 +194,45 @@ console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // 
 						err && console.log(chalk.red("AppError: db disconnection error --> " + err.message));
 					}); // Close connection to the database
 				});
-			}); // if I make the lineReader "close" return a promise then I can get rid of a lot of nesting
 
-			lineReader.on("error", (err) => {
-				console.error("Error reading the file:", err);
-			});
-
-			// process.exit(); // simulating an abrupt app closure before db is gracefully disconnected, on executing this I observed both commit_log and temp table
-			// do not exits when accessed through SQLite3 terminal session, maybe SQLite3 has an internal cleaning or commit system for resolving abrupt closures
-			// since primary table also not retained hence need to store every 5-10 secs in %temp% dir with a condition if-abrupt closure occured, restore & auto-commit
-			// on next startup with a commit msg "Auto-commited due to abrupt closure" | neither was the SELECT data displayed, weird
-		}); // db.serialize() make the database process go step by step / synchronously
-	});
-
-	const u_input3 = await user_input("Enter another command: ");
-	console.log("User input: ", u_input3);
-
-	/* Database exit point */
+				// dbPromise
+				// 	.pipe(
+				// 		mergeMap((db) =>
+				// 			makeAsyncVoid(() => {
+				// 				// Clean up and finalize database operations
+				// 				db.serialize()
+				// 			})
+				// 		),
+				// 		catchError((error) => {
+				// 			console.error("Database cleanup error:", error);
+				// 			return EMPTY;
+				// 		})
+				// 	)
+				// 	.subscribe();
+			}),
+			catchError((error) => {
+				console.error("Error reading the file:", error);
+				return EMPTY;
+			})
+		)
+		.subscribe({
+			next: (line) => {
+				// Handle each line emitted
+				// ...
+			},
+			error: (error) => {
+				console.error("Subscription error:", error);
+			},
+			complete: () => {
+				console.log("Subscription complete");
+			},
+		});
 
 	/* Program exit */
 	stdin.destroy(); // closing any open input stream to properly exit --> working
 })();
 
 /* *** End of main() function above *** */
-
-function user_input(prompt: string): Promise<string> {
-	return new Promise((resolve) => {
-		console.log(prompt);
-
-		const onData = (data: { toString: () => string }) => {
-			const userInput = data.toString().trim();
-			resolve(userInput);
-			cleanup();
-		};
-
-		const cleanup = () => {
-			process.stdin.off("data", onData); // off is used to remove the event listener for "data" once the input received, preventing potential memory leaks
-			// stdin.destroy(); // do not close input stream else it will turn off core input stream including inputs for prompts/MCQs from inquirer.js
-		};
-
-		process.stdin.once("data", onData);
-	});
-}
-
-function make_async_void(callback: (...params: any[]) => void, ...params: any[]) {
-	return new Promise<void>((resolve) => {
-		callback(...params);
-		resolve();
-	});
-}
-
-function make_async_returns<T>(callback: (...params: any[]) => T, ...params: any[]) {
-	return new Promise<T>((resolve) => {
-		resolve(callback(...params));
-	});
-}
 
 function getLocalDateTime() {
 	const now = new Date();
@@ -296,12 +274,4 @@ function sqlLocalDate() {
 	const date = now.getDate();
 
 	return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
-}
-
-function insertEntry(db: sqlite3.Database, sqlquery: string, params?: any[]): void {
-	db.run(sqlquery, params, (err) => {
-		if (err) {
-			console.error("row/entry insertion error --> " + err.message);
-		}
-	});
 }
