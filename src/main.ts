@@ -7,7 +7,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "readline";
 import { stdin } from "node:process";
 
-console.log(` ${chalk.bold.underline.green("Leetcode version control")}\n`); // Main App Title
+console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App Title
 
 /* *** main() function below *** */
 
