@@ -8,8 +8,8 @@ class SQLite3_DB {
         return new Promise((resolve) => {
             const db = new sqlite3.Database(dbFilePath, (err) => {
                 if (err) {
-                    console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
-                    resolve(db);
+                    console.error(chalk.red("AppError: Could not connect to db --> " + err.message));
+                    resolve(undefined);
                 }
                 else {
                     resolve(db);
@@ -21,7 +21,7 @@ class SQLite3_DB {
         return new Promise((resolve) => {
             dbHandle.run(sqlQuery, (err) => {
                 if (err) {
-                    console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
+                    console.error(chalk.red("AppError: Table-creation Error --> " + err.message));
                     resolve();
                 }
                 else {
@@ -34,7 +34,7 @@ class SQLite3_DB {
         return new Promise((resolve) => {
             dbHandle.run(sqlQuery, (err) => {
                 if (err) {
-                    console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
+                    console.error(chalk.red("AppError: Temp-table creation error --> " + err.message));
                     resolve();
                 }
                 else {
@@ -55,7 +55,7 @@ class SQLite3_DB {
                     line_no += 1;
                     dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
 					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, [username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg], (err) => {
-                        err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+                        err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
                     });
                 });
             });
@@ -63,7 +63,7 @@ class SQLite3_DB {
                 resolve();
             });
             lineReader.on("error", (err) => {
-                console.log(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
+                console.error(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
                 resolve();
             });
         });
@@ -74,18 +74,18 @@ class SQLite3_DB {
             dbHandle.serialize(() => {
                 dbHandle.each(sqlQuery, (err, row) => {
                     if (err) {
-                        console.log(chalk.red("SQLite3_DB.writeFromTableToFile: Error retrieving row --> " + err.message));
+                        console.error(chalk.red("SQLite3_DB.writeFromTableToFile: Error retrieving row --> " + err.message));
                     }
                     else {
                         fileWriteStream.write(row.line_string + "\n", (writeErr) => {
                             if (writeErr) {
-                                console.log(chalk.red("SQLite3_DB.writeFromTableToFile: Error writing to file --> " + writeErr.message));
+                                console.error(chalk.red("SQLite3_DB.writeFromTableToFile: Error writing to file --> " + writeErr.message));
                             }
                         });
                     }
                 }, (completeErr, rowCount) => {
                     if (completeErr) {
-                        console.log(chalk.red(`SQLite3_DB.writeFromTableToFile: Error completing query at ${rowCount} row count --> ` +
+                        console.error(chalk.red(`SQLite3_DB.writeFromTableToFile: Error completing query at ${rowCount} row count --> ` +
                             completeErr.message));
                     }
                     fileWriteStream.end(() => {
@@ -99,7 +99,7 @@ class SQLite3_DB {
         return new Promise((resolve) => {
             dbHandle.run(sqlQuery, (err) => {
                 if (err) {
-                    console.log(chalk.red("AppError: Table deletion error --> " + err.message));
+                    console.error(chalk.red("AppError: Table deletion error --> " + err.message));
                     resolve();
                 }
                 else {
@@ -112,7 +112,7 @@ class SQLite3_DB {
         return new Promise((resolve) => {
             dbHandle.close((err) => {
                 if (err) {
-                    console.log(chalk.red("AppError: db disconnection error --> " + err.message));
+                    console.error(chalk.red("AppError: db disconnection error --> " + err.message));
                     resolve();
                 }
                 else {
@@ -164,33 +164,35 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`);
     console.log("User input: ", u_input);
     const u_input2 = await user_input("\nEnter another command: ");
     console.log("User input: ", u_input2);
-    await SQLite3_DB.createTable(db, `
-		CREATE TABLE IF NOT EXISTS commit_log (
-			sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT NOT NULL,
-			commit_time TIME NOT NULL,
-			commit_date DATE NOT NULL,
-			commit_no INTEGER NOT NULL,
-			line_no INTEGER NOT NULL,
-			line_string TEXT NOT NULL,
-			commit_msg TEXT DEFAULT NULL
-		)
-	`);
-    await SQLite3_DB.createTempTable(db, `
-		CREATE TEMPORARY TABLE temp_file(
-			line_no INTEGER,
-			line_string TEXT
-		)
-	`);
-    const commit_time = sqlLocalTime();
-    const commit_date = sqlLocalDate();
-    const commitData = f.readJson("./db/commitData.json");
-    commitData.commit_no += 1;
-    f.writeJson("./db/commitData.json", commitData);
-    await SQLite3_DB.fromFileInsertEachRow(db, "../../canJump1 Leetcode - Copy.txt", "Sahil Dutta", commit_time, commit_date, commitData.commit_no, "My first commit");
-    await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
-    await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
-    await SQLite3_DB.disconnect(db);
+    if (db) {
+        await SQLite3_DB.createTable(db, `
+			CREATE TABLE IF NOT EXISTS commit_log (
+				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
+				username TEXT NOT NULL,
+				commit_time TIME NOT NULL,
+				commit_date DATE NOT NULL,
+				commit_no INTEGER NOT NULL,
+				line_no INTEGER NOT NULL,
+				line_string TEXT NOT NULL,
+				commit_msg TEXT DEFAULT NULL
+			)
+		`);
+        await SQLite3_DB.createTempTable(db, `
+			CREATE TEMPORARY TABLE temp_file(
+				line_no INTEGER,
+				line_string TEXT
+			)
+		`);
+        const commit_time = sqlLocalTime();
+        const commit_date = sqlLocalDate();
+        const commitData = f.readJson("./db/commitData.json");
+        commitData.commit_no += 1;
+        f.writeJson("./db/commitData.json", commitData);
+        await SQLite3_DB.fromFileInsertEachRow(db, "../../canJump1 Leetcode - Copy.txt", "Sahil Dutta", commit_time, commit_date, commitData.commit_no, "My first commit");
+        await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
+        await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
+        await SQLite3_DB.disconnect(db);
+    }
     const u_input3 = await user_input("Enter 3rd command: ");
     console.log("User input: ", u_input3);
     process.stdin.destroy();
@@ -198,6 +200,7 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`);
 function user_input(prompt) {
     return new Promise((resolve) => {
         prompt && console.log(prompt);
+        process.stdout.write("> ");
         const onData = (data) => {
             const userInput = data.toString().trim();
             resolve(userInput);
@@ -244,11 +247,4 @@ function sqlLocalDate() {
     const month = now.getMonth() + 1;
     const date = now.getDate();
     return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
-}
-function insertEntry(db, sqlquery, params) {
-    db.run(sqlquery, params, (err) => {
-        if (err) {
-            console.error("row/entry insertion error --> " + err.message);
-        }
-    });
 }
