@@ -207,9 +207,14 @@ function user_input(prompt) {
             cleanup();
         };
         const cleanup = () => {
-            process.stdin.off("data", onData);
+            process.stdin.removeListener("data", onData);
+            process.stdin.pause();
         };
-        process.stdin.once("data", onData);
+        const resumeAndAddListener = () => {
+            process.stdin.resume();
+            process.stdin.once("data", onData);
+        };
+        resumeAndAddListener();
     });
 }
 function getLocalDateTime() {

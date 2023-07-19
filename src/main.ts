@@ -336,11 +336,20 @@ function user_input(prompt?: string): Promise<string> {
 		};
 
 		const cleanup = () => {
-			process.stdin.off("data", onData); // off is used to remove the event listener for "data" once the input received, preventing potential memory leaks
-			// stdin.destroy(); // do not close input stream else it will turn off core input stream including inputs for prompts/MCQs from inquirer.js
+			// Remove the event listener for "data"
+			process.stdin.removeListener("data", onData);
+			// Pause the input stream to prevent further data events
+			process.stdin.pause();
 		};
 
-		process.stdin.once("data", onData);
+		// Resume the input stream and add the event listener for "data" once
+		const resumeAndAddListener = () => {
+			process.stdin.resume();
+			process.stdin.once("data", onData);
+		};
+
+		// Initially, resume and add the event listener for "data"
+		resumeAndAddListener();
 	});
 }
 
