@@ -3,17 +3,125 @@ import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { EventEmitter } from "node:events";
-class dbSerializer extends EventEmitter {
-    row_insertion_over() {
-        this.emit("row_insertion_over");
+class SQLite3_DB {
+    static connect(dbFilePath) {
+        return new Promise((resolve) => {
+            const db = new sqlite3.Database(dbFilePath, (err) => {
+                if (err) {
+                    console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
+                    resolve(db);
+                }
+                else {
+                    resolve(db);
+                }
+            });
+        });
+    }
+    static createTable(dbHandle, sqlQuery) {
+        return new Promise((resolve) => {
+            dbHandle.run(sqlQuery, (err) => {
+                if (err) {
+                    console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
+                    resolve();
+                }
+                else {
+                    resolve();
+                }
+            });
+        });
+    }
+    static createTempTable(dbHandle, sqlQuery) {
+        return new Promise((resolve) => {
+            dbHandle.run(sqlQuery, (err) => {
+                if (err) {
+                    console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
+                    resolve();
+                }
+                else {
+                    resolve();
+                }
+            });
+        });
+    }
+    static fromFileInsertEachRow(dbHandle, inputFile, username, commit_time, commit_date, commit_no, commit_msg) {
+        return new Promise((resolve) => {
+            const lineReader = createInterface({
+                input: createReadStream(inputFile, "utf8"),
+                crlfDelay: Infinity,
+            });
+            let line_no = 0;
+            lineReader.on("line", (line_string) => {
+                dbHandle.serialize(() => {
+                    line_no += 1;
+                    dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, [username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg], (err) => {
+                        err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+                    });
+                });
+            });
+            lineReader.on("close", () => {
+                resolve();
+            });
+            lineReader.on("error", (err) => {
+                console.log(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
+                resolve();
+            });
+        });
+    }
+    static writeFromTableToFile(dbHandle, outFile, sqlQuery) {
+        return new Promise((resolve) => {
+            const fileWriteStream = createWriteStream(outFile);
+            dbHandle.serialize(() => {
+                dbHandle.each(sqlQuery, (err, row) => {
+                    if (err) {
+                        console.log(chalk.red("SQLite3_DB.writeFromTableToFile: Error retrieving row --> " + err.message));
+                    }
+                    else {
+                        fileWriteStream.write(row.line_string + "\n", (writeErr) => {
+                            if (writeErr) {
+                                console.log(chalk.red("SQLite3_DB.writeFromTableToFile: Error writing to file --> " + writeErr.message));
+                            }
+                        });
+                    }
+                }, (completeErr, rowCount) => {
+                    if (completeErr) {
+                        console.log(chalk.red(`SQLite3_DB.writeFromTableToFile: Error completing query at ${rowCount} row count --> ` +
+                            completeErr.message));
+                    }
+                    fileWriteStream.end(() => {
+                        resolve();
+                    });
+                });
+            });
+        });
+    }
+    static deleteTable(dbHandle, sqlQuery) {
+        return new Promise((resolve) => {
+            dbHandle.run(sqlQuery, (err) => {
+                if (err) {
+                    console.log(chalk.red("AppError: Table deletion error --> " + err.message));
+                    resolve();
+                }
+                else {
+                    resolve();
+                }
+            });
+        });
+    }
+    static disconnect(dbHandle) {
+        return new Promise((resolve) => {
+            dbHandle.close((err) => {
+                if (err) {
+                    console.log(chalk.red("AppError: db disconnection error --> " + err.message));
+                    resolve();
+                }
+                else {
+                    resolve();
+                }
+            });
+        });
     }
 }
-const rows_insertion_over = new dbSerializer();
-rows_insertion_over.row_insertion_over();
-rows_insertion_over.on("row_insertion_over", () => {
-    console.log("Event recieved just now");
-});
 console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`);
 (async function main() {
     f.getMemoryLog();
@@ -51,85 +159,39 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`);
     f.createDir(f.joinPath(tmpdirPath, "leetcodeislife", "Current session storage", "log"));
     const currentDateTime = getLocalDateTime();
     console.log(currentDateTime);
-    const db = new sqlite3.Database("./db/test.db", (err) => {
-        err && console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
-    });
+    const db = await SQLite3_DB.connect("./db/test.db");
     const u_input = await user_input("\nEnter the command: ");
     console.log("User input: ", u_input);
     const u_input2 = await user_input("\nEnter another command: ");
     console.log("User input: ", u_input2);
-    const filePath = "../../canJump1 Leetcode - Copy.txt";
-    const lineReader = createInterface({
-        input: createReadStream(filePath, "utf8"),
-        crlfDelay: Infinity,
-    });
-    db.serialize(() => {
-        db.run(`
-			CREATE TABLE IF NOT EXISTS commit_log (
-				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
-				username TEXT NOT NULL,
-				commit_time TIME NOT NULL,
-				commit_date DATE NOT NULL,
-				commit_no INTEGER NOT NULL,
-				line_no INTEGER NOT NULL,
-				line_string TEXT NOT NULL,
-				commit_msg TEXT DEFAULT NULL
-			)
-		`, (err) => {
-            err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
-        });
-        db.run(`
-			CREATE TEMPORARY TABLE temp_file(
-				line_no INTEGER,
-				line_string TEXT
-			)
-		`, (err) => {
-            err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
-        });
-        lineReader.on("line", (line) => {
-            db.serialize(() => {
-                db.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, ["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`], (err) => {
-                    err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
-                });
-            });
-        });
-        lineReader.on("close", () => {
-            db.serialize(() => {
-                const commit_data = f.readJson("./db/commit_data.json");
-                commit_data.commit_no += 1;
-                f.writeJson("./db/commit_data.json", commit_data);
-                const fileWriteStream = createWriteStream("../../output.txt");
-                db.each("SELECT line_string FROM commit_log", (err, row) => {
-                    if (err) {
-                        console.error("Error retrieving row:", err);
-                    }
-                    else {
-                        fileWriteStream.write(row.line_string + "\n");
-                    }
-                }, () => {
-                    fileWriteStream.end();
-                    console.log("\nLines written to file successfully.");
-                });
-                db.run("DROP TABLE commit_log", (err) => {
-                    err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
-                });
-                db.close((err) => {
-                    if (err) {
-                        console.log(chalk.red("AppError: db disconnection error --> " + err.message));
-                        console.log("\nEnter another command: ");
-                    }
-                    else {
-                        console.log("\nEnter another command: ");
-                    }
-                });
-            });
-        });
-        lineReader.on("error", (err) => {
-            console.error("Error reading the file:", err);
-        });
-    });
-    const u_input3 = await user_input();
+    await SQLite3_DB.createTable(db, `
+		CREATE TABLE IF NOT EXISTS commit_log (
+			sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL,
+			commit_time TIME NOT NULL,
+			commit_date DATE NOT NULL,
+			commit_no INTEGER NOT NULL,
+			line_no INTEGER NOT NULL,
+			line_string TEXT NOT NULL,
+			commit_msg TEXT DEFAULT NULL
+		)
+	`);
+    await SQLite3_DB.createTempTable(db, `
+		CREATE TEMPORARY TABLE temp_file(
+			line_no INTEGER,
+			line_string TEXT
+		)
+	`);
+    const commit_time = sqlLocalTime();
+    const commit_date = sqlLocalDate();
+    const commitData = f.readJson("./db/commitData.json");
+    commitData.commit_no += 1;
+    f.writeJson("./db/commitData.json", commitData);
+    await SQLite3_DB.fromFileInsertEachRow(db, "../../canJump1 Leetcode - Copy.txt", "Sahil Dutta", commit_time, commit_date, commitData.commit_no, "My first commit");
+    await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
+    await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
+    await SQLite3_DB.disconnect(db);
+    const u_input3 = await user_input("Enter 3rd command: ");
     console.log("User input: ", u_input3);
     process.stdin.destroy();
 })();

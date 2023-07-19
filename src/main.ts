@@ -11,42 +11,158 @@ import chalk from "chalk";
 // import inquirer from "inquirer";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
-import { createReadStream, createWriteStream } from "node:fs";
+import { PathLike, createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { EventEmitter } from "node:events";
 
-class dbSerializer extends EventEmitter {
-	row_insertion_over() {
-		this.emit("row_insertion_over");
+class SQLite3_DB {
+	static connect(dbFilePath: string) {
+		return new Promise<sqlite3.Database>((resolve) => {
+			const db = new sqlite3.Database(dbFilePath, (err) => {
+				if (err) {
+					console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
+					resolve(db);
+				} else {
+					resolve(db);
+				}
+			}); // Establishing a connection between this node process and SQLite3 Database
+		});
+	} // this function when resolved returns false if db connection failed else returns the db handler
+
+	static createTable(dbHandle: sqlite3.Database, sqlQuery: string) {
+		return new Promise<void>((resolve) => {
+			dbHandle.run(sqlQuery, (err) => {
+				if (err) {
+					console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
+					resolve();
+				} else {
+					// resolve promise here
+					resolve();
+				}
+			}); // Creation of a table (mini-database)
+		});
+	}
+
+	static createTempTable(dbHandle: sqlite3.Database, sqlQuery: string) {
+		return new Promise<void>((resolve) => {
+			dbHandle.run(sqlQuery, (err) => {
+				if (err) {
+					console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
+					resolve();
+				} else {
+					resolve();
+				}
+			});
+		});
+	}
+
+	static fromFileInsertEachRow(
+		dbHandle: sqlite3.Database,
+		inputFile: PathLike,
+		username: string,
+		commit_time: string,
+		commit_date: string,
+		commit_no: number,
+		commit_msg: string
+	) {
+		return new Promise<void>((resolve) => {
+			const lineReader = createInterface({
+				input: createReadStream(inputFile, "utf8"),
+				crlfDelay: Infinity, // To handle both Unix and Windows line endings
+			});
+
+			let line_no = 0;
+
+			lineReader.on("line", (line_string) => {
+				// Insert each line into the table
+				dbHandle.serialize(() => {
+					line_no += 1;
+					dbHandle.run(
+						`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
+						[username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg],
+						(err) => {
+							err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
+						}
+					);
+				}); // db.serialize() make the database process go step by step / synchronously
+			});
+
+			lineReader.on("close", () => {
+				resolve();
+			});
+
+			lineReader.on("error", (err) => {
+				console.log(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
+				resolve();
+			});
+		});
+	}
+
+	static writeFromTableToFile(dbHandle: sqlite3.Database, outFile: PathLike, sqlQuery: string) {
+		return new Promise<void>((resolve) => {
+			const fileWriteStream = createWriteStream(outFile);
+
+			dbHandle.serialize(() => {
+				dbHandle.each(
+					sqlQuery,
+					(err, row: { line_string: string }) => {
+						if (err) {
+							console.log(chalk.red("SQLite3_DB.writeFromTableToFile: Error retrieving row --> " + err.message));
+						} else {
+							fileWriteStream.write(row.line_string + "\n", (writeErr) => {
+								if (writeErr) {
+									console.log(
+										chalk.red("SQLite3_DB.writeFromTableToFile: Error writing to file --> " + writeErr.message)
+									);
+								}
+							});
+						}
+					},
+					(completeErr, rowCount) => {
+						if (completeErr) {
+							console.log(
+								chalk.red(
+									`SQLite3_DB.writeFromTableToFile: Error completing query at ${rowCount} row count --> ` +
+										completeErr.message
+								)
+							);
+						}
+
+						fileWriteStream.end(() => {
+							resolve();
+						});
+					}
+				);
+			});
+		});
+	}
+
+	static deleteTable(dbHandle: sqlite3.Database, sqlQuery: string) {
+		return new Promise<void>((resolve) => {
+			dbHandle.run(sqlQuery, (err) => {
+				if (err) {
+					console.log(chalk.red("AppError: Table deletion error --> " + err.message));
+					resolve();
+				} else {
+					resolve();
+				}
+			}); // delete the table named users
+		});
+	}
+
+	static disconnect(dbHandle: sqlite3.Database) {
+		return new Promise<void>((resolve) => {
+			dbHandle.close((err) => {
+				if (err) {
+					console.log(chalk.red("AppError: db disconnection error --> " + err.message));
+					resolve();
+				} else {
+					resolve();
+				}
+			}); // Close connection to the database
+		});
 	}
 }
-
-const rows_insertion_over = new dbSerializer();
-
-rows_insertion_over.row_insertion_over(); // event emitter
-rows_insertion_over.on("row_insertion_over", () => {
-	console.log("Event recieved just now");
-}); // event listener --> can return a promise to pause program execution, eg: below
-
-/*
-	function waitForEvent() {
-	return new Promise((resolve) => {
-    myCustomEmitter.on('myEvent', (arg1, arg2) => {
-      // Event handler logic
-      resolve({ arg1, arg2 }); // Resolve the promise with the event data
-    });
-  });
-}
-
-async function myFunction() {
-  console.log('Before waiting for event');
-  const eventData = await waitForEvent();
-  console.log('Event received:', eventData.arg1, eventData.arg2);
-  console.log('After event received');
-}
-
-myFunction();
-*/
 
 console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App Title
 
@@ -103,10 +219,6 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 
 	/* End of setup process */
 
-	// f.readFileLineByLine("../../canJump1 Leetcode - Copy.txt", (line) => {
-	// 	console.log(line);
-	// });
-
 	/* Database entry point --> later move .db to %LOCALAPPDATA% & %APPDATA% --> No need to abstract as in if-else in else we can run code on success & is faster */
 
 	interface userCommitLogEntry {
@@ -120,9 +232,7 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 		commit_msg: string | null;
 	} // Type of row / entry into the table --> each attr is a column
 
-	const db = new sqlite3.Database("./db/test.db", (err) => {
-		err && console.log(chalk.red("AppError: Could not connect to db --> " + err.message));
-	}); // Establishing a connection between this node process and SQLite3 Database
+	const db = await SQLite3_DB.connect("./db/test.db");
 
 	const u_input = await user_input("\nEnter the command: ");
 	console.log("User input: ", u_input);
@@ -130,131 +240,84 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 	const u_input2 = await user_input("\nEnter another command: ");
 	console.log("User input: ", u_input2);
 
-	const filePath = "../../canJump1 Leetcode - Copy.txt";
-	const lineReader = createInterface({
-		input: createReadStream(filePath, "utf8"),
-		crlfDelay: Infinity, // To handle both Unix and Windows line endings
-	});
+	await SQLite3_DB.createTable(
+		db,
+		`
+		CREATE TABLE IF NOT EXISTS commit_log (
+			sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL,
+			commit_time TIME NOT NULL,
+			commit_date DATE NOT NULL,
+			commit_no INTEGER NOT NULL,
+			line_no INTEGER NOT NULL,
+			line_string TEXT NOT NULL,
+			commit_msg TEXT DEFAULT NULL
+		)
+	`
+	);
 
-	db.serialize(() => {
-		db.run(
-			`
-			CREATE TABLE IF NOT EXISTS commit_log (
-				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
-				username TEXT NOT NULL,
-				commit_time TIME NOT NULL,
-				commit_date DATE NOT NULL,
-				commit_no INTEGER NOT NULL,
-				line_no INTEGER NOT NULL,
-				line_string TEXT NOT NULL,
-				commit_msg TEXT DEFAULT NULL
-			)
-		`,
-			(err) => {
-				err && console.log(chalk.red("AppError: Table-creation Error --> " + err.message));
-			}
-		); // Creation of a table (mini-database)
+	await SQLite3_DB.createTempTable(
+		db,
+		`
+		CREATE TEMPORARY TABLE temp_file(
+			line_no INTEGER,
+			line_string TEXT
+		)
+	`
+	);
 
-		db.run(
-			`
-			CREATE TEMPORARY TABLE temp_file(
-				line_no INTEGER,
-				line_string TEXT
-			)
-		`,
-			(err) => {
-				err && console.log(chalk.red("AppError: Temp-table creation error --> " + err.message));
-			}
-		);
+	const commit_time = sqlLocalTime();
+	const commit_date = sqlLocalDate();
 
-		lineReader.on("line", (line) => {
-			// Insert each line into the table
-			db.serialize(() => {
-				db.run(
-					`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
-					["Sahil Dutta", sqlLocalTime(), sqlLocalDate(), 1, 1, line, `Commit msg ${1}`],
-					(err) => {
-						err && console.log(chalk.red("AppError: row/entry insertion error --> " + err.message));
-					}
-				);
-			});
-		});
+	const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
+	commitData.commit_no += 1; // set the changes to staging
+	// commitData.abrupt_exit = !commitData.abrupt_exit; // set the changes to staging
+	f.writeJson("./db/commitData.json", commitData); // commit changes to the JSON file --> then resolve the promise
 
-		lineReader.on("close", () => {
-			db.serialize(() => {
-				// // eg: SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')
-				// db.all("SELECT * FROM commit_log", (err, rows: userCommitLogEntry[]) => {
-				// 	if (err) {
-				// 		console.log(chalk.red("AppError: Table output error --> --> " + err.message));
-				// 	} else {
-				// 		rows.length == 0
-				// 			? console.log("No records found")
-				// 			: rows.forEach((entry) => {
-				// 					console.log(entry);
-				// 					// console.log(
-				// 					// 	`Commit-log ${entry.sl_no} --> Username: ${entry.username} | Date: ${entry.commit_date} | Time: ${entry.commit_time}`
-				// 					// );
-				// 			  });
-				// 	} // **REMINDER: to replace forEach with for-loop cause the later is faster than the former as the iternation becomes larger
-				// }); // Get/Fetch data from table (db) and display entire table or list of sorted/filtered rows
+	await SQLite3_DB.fromFileInsertEachRow(
+		db,
+		"../../canJump1 Leetcode - Copy.txt",
+		"Sahil Dutta",
+		commit_time,
+		commit_date,
+		commitData.commit_no,
+		"My first commit"
+	);
 
-				const commit_data = f.readJson("./db/commit_data.json"); // retrive data as object (key-value pair) from JSON file
-				commit_data.commit_no += 1; // set the changes to staging
-				// commit_data.abrupt_exit = !commit_data.abrupt_exit; // set the changes to staging
-				f.writeJson("./db/commit_data.json", commit_data); // commit changes to the JSON file
+	// // eg: SELECT * FROM commit_log WHERE commit_time > TIME('00:00:00')
+	// db.all("SELECT * FROM commit_log", (err, rows: userCommitLogEntry[]) => {
+	// 	if (err) {
+	// 		console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+	// 	} else {
+	// 		rows.length == 0
+	// 			? console.log("No records found")
+	// 			: rows.forEach((entry) => {
+	// 					console.log(entry);
+	// 					// console.log(
+	// 					// 	`Commit-log ${entry.sl_no} --> Username: ${entry.username} | Date: ${entry.commit_date} | Time: ${entry.commit_time}`
+	// 					// );
+	// 			  });
+	// 	} // **REMINDER: to replace forEach with for-loop cause the later is faster than the former as the iternation becomes larger
+	// }); // Get/Fetch data from table (db) and display entire table or list of sorted/filtered rows
 
-				// const fileWriteStream = createWriteStream("../../output.txt", { flags: "a" }); // append the output file with flag 'a'
-				const fileWriteStream = createWriteStream("../../output.txt"); // overwrite the output file
+	await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
 
-				db.each(
-					"SELECT line_string FROM commit_log",
-					(err, row: { line_string: string }) => {
-						if (err) {
-							console.error("Error retrieving row:", err);
-						} else {
-							fileWriteStream.write(row.line_string + "\n");
-							// console.log(row.line_string);
-						}
-					},
-					() => {
-						fileWriteStream.end();
-						console.log("\nLines written to file successfully.");
-					}
-				); // run a callback on selected columns of each row of the table and a completed callback for cleanup
+	await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
 
-				db.run("DROP TABLE commit_log", (err) => {
-					err && console.log(chalk.red("AppError: Table deletion error --> " + err.message));
-				}); // delete the table named users
+	await SQLite3_DB.disconnect(db);
 
-				db.close((err) => {
-					if (err) {
-						console.log(chalk.red("AppError: db disconnection error --> " + err.message));
-						console.log("\nEnter another command: "); // even when database closure was unsuccessfull
-					} else {
-						console.log("\nEnter another command: "); // after the database is closed successfully
-					}
-				}); // Close connection to the database
-			});
-		}); // if I make the lineReader "close" return a promise then I can get rid of a lot of nesting
-
-		lineReader.on("error", (err) => {
-			console.error("Error reading the file:", err);
-		});
-
-		// process.exit(); // simulating an abrupt app closure before db is gracefully disconnected, on executing this I observed both commit_log and temp table
-		// do not exits when accessed through SQLite3 terminal session, maybe SQLite3 has an internal cleaning or commit system for resolving abrupt closures
-		// since primary table also not retained hence need to store every 5-10 secs in %temp% dir with a condition if-abrupt closure occured, restore & auto-commit
-		// on next startup with a commit msg "Auto-commited due to abrupt closure" | neither was the SELECT data displayed, weird
-	}); // db.serialize() make the database process go step by step / synchronously
+	// process.exit(); // simulating an abrupt app closure before db is gracefully disconnected, on executing this I observed both commit_log and temp table
+	// do not exits when accessed through SQLite3 terminal session, maybe SQLite3 has an internal cleaning or commit system for resolving abrupt closures
+	// since primary table also not retained hence need to store every 5-10 secs in %temp% dir with a condition if-abrupt closure occured, restore & auto-commit
+	// on next startup with a commit msg "Auto-commited due to abrupt closure" | neither was the SELECT data displayed, weird
 
 	/* Database exit point */
 
-	const u_input3 = await user_input();
+	const u_input3 = await user_input("Enter 3rd command: ");
 	console.log("User input: ", u_input3);
 
 	/* Program exit */
-	process.stdin.destroy(); // closing any open input stream to properly exit --> working
+	process.stdin.destroy(); // destroying any open input stream to properly exit --> working
 })();
 
 /* *** End of main() function above *** */
