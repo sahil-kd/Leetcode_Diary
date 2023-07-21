@@ -31,4 +31,5 @@ export function throttle(callback: (...args: any[]) => void, delay: number) {
 		shouldWait = true;
 		setTimeout(timeoutFn, delay);
 	};
-} // no use case here I guess
+} // no use case here, but good for mouse/scrolling/swiping events to minimize requests to server to within 60 frames/sec --> max fps a human eye can see
+// even though our reflexes can surpass that limit greatly and act in much higher fps --> useful in fast-paced games where gamers rely on muscle memory & reflexes

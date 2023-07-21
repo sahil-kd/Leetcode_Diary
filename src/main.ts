@@ -9,7 +9,8 @@
 */
 
 import chalk from "chalk";
-// import inquirer from "inquirer";
+import inquirer from "inquirer";
+import { exec } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { PathLike, createReadStream, createWriteStream } from "node:fs";
@@ -164,7 +165,7 @@ class SQLite3_DB {
 	}
 }
 
-console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App Title
+console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App Title
 
 /* *** main() function below *** */
 
@@ -232,13 +233,40 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 		commit_msg: string | null;
 	} // Type of row / entry into the table --> each attr is a column
 
-	const db = await SQLite3_DB.connect("./db/test.db");
+	// const db = await SQLite3_DB.connect("./db/test.db");
+	const db = undefined;
 
-	const u_input = await user_input("\nEnter the command: ");
-	console.log("User input: ", u_input);
+	// const u_input = await user_input("\nEnter the command: ");
+	// console.log("User input: ", u_input);
 
-	const u_input2 = await user_input("\nEnter another command: ");
-	console.log("User input: ", u_input2);
+	// const u_input2 = await user_input("\nEnter another command: ");
+	// console.log("User input: ", u_input2);
+
+	const dirPath = "C:\\Users\\dell\\Desktop\\Inquirer adv egs";
+
+	// const items = await listItemsInDirectory(`"${dirPath}"`); // <-- working
+	// items.forEach((item) => console.log(">> ", item));
+
+	process.stdout.write("\n");
+
+	await printWorkingDirectory();
+	await changeDirectory("C:\\Users\\dell\\Desktop\\Cpp");
+	await printWorkingDirectory();
+
+	inquirer
+		.prompt([
+			{
+				type: "rawlist",
+				name: "list_item",
+				message: "Files: ",
+				// choices: getChoicesWithinRange(await listItemsInDirectory(`"${dirPath}"`), 1, 23),
+				choices: [new inquirer.Separator(), ...(await listItemsInDirectory(dirPath)), new inquirer.Separator()],
+				default: 0,
+			},
+		])
+		.then((selection) => {
+			console.log("You selected: ", selection.list_item);
+		});
 
 	if (db) {
 		await SQLite3_DB.createTable(
@@ -315,11 +343,11 @@ console.log(` ${chalk.bold.underline.green("Leetcode Diary")}\n`); // Main App T
 
 	/* Database exit point */
 
-	const u_input3 = await user_input("Enter 3rd command: ");
-	console.log("User input: ", u_input3);
+	// const u_input3 = await user_input("Enter 3rd command: ");
+	// console.log("User input: ", u_input3);
 
-	/* Program exit */
-	process.stdin.destroy(); // destroying any open input stream to properly exit --> working
+	// /* Program exit */
+	// process.stdin.destroy(); // destroying any open input stream to properly exit --> working
 })();
 
 /* *** End of main() function above *** */
@@ -393,4 +421,64 @@ function sqlLocalDate() {
 	const date = now.getDate();
 
 	return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
+}
+
+async function listItemsInDirectory(directory_path: string) {
+	try {
+		const items = await (function (command: string) {
+			return new Promise<string[]>((resolve, reject) => {
+				exec(command, (error, stdout, stderr) => {
+					if (error) {
+						reject(error);
+					} else {
+						resolve(stdout.trim().split("\n") || stderr);
+					}
+				});
+			});
+		})(`ls "${directory_path}"`); // IIFE
+		return items.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })); // case-insensitive sort
+	} catch (error: any) {
+		console.error("Error listing items:", error.message);
+		return [];
+	}
+}
+
+async function changeDirectory(path: string) {
+	try {
+		await (function (command: string) {
+			return new Promise((resolve, reject) => {
+				exec(command, (error, stdout, stderr) => {
+					if (error) {
+						reject(error);
+					} else {
+						resolve(stdout || stderr);
+					}
+				});
+			});
+		})(`cd "${path}"`); // IIFE
+		console.log(`Changed directory to: ${path}`);
+	} catch (error: any) {
+		console.error("Error changing directory:", error.message);
+	}
+}
+
+async function printWorkingDirectory() {
+	try {
+		const currentDirectory = await (function (command: string) {
+			return new Promise<string>((resolve, reject) => {
+				exec(command, (error, stdout, stderr) => {
+					if (error) {
+						reject(error);
+					} else {
+						resolve(stdout.trim() || stderr);
+					}
+				});
+			});
+		})("pwd"); // IIFE
+		console.log("Current working directory:", currentDirectory);
+		return currentDirectory;
+	} catch (error: any) {
+		console.error("Error getting current working directory:", error.message);
+		return null;
+	}
 }
