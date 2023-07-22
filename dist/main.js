@@ -1,6 +1,5 @@
 import chalk from "chalk";
-import inquirer from "inquirer";
-import { exec } from "node:child_process";
+import { exec, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
@@ -162,24 +161,60 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
     const currentDateTime = getLocalDateTime();
     console.log(currentDateTime);
     const db = undefined;
-    const dirPath = "C:\\Users\\dell\\Desktop\\Inquirer adv egs";
-    process.stdout.write("\n");
-    await printWorkingDirectory();
-    await changeDirectory("C:\\Users\\dell\\Desktop\\Cpp");
-    await printWorkingDirectory();
-    inquirer
-        .prompt([
-        {
-            type: "rawlist",
-            name: "list_item",
-            message: "Files: ",
-            choices: [new inquirer.Separator(), ...(await listItemsInDirectory(dirPath)), new inquirer.Separator()],
-            default: 0,
-        },
-    ])
-        .then((selection) => {
-        console.log("You selected: ", selection.list_item);
-    });
+    let dirPath = "C:\\Users\\dell\\Desktop\\CSS experiments";
+    while (true) {
+        process.stdout.write("\n");
+        process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString()));
+        const input = await user_input();
+        const parsed_input = parse_input(input);
+        const command = parsed_input.command;
+        if (!command) {
+            console.error(chalk.red("Invalid command"));
+            continue;
+        }
+        if (command === "exit")
+            break;
+        if (command === "cd") {
+            const targetDirectory = parsed_input.args[0];
+            try {
+                if (targetDirectory == "~") {
+                    process.chdir(f.getUserHomeDirPath());
+                    continue;
+                }
+                process.chdir(targetDirectory);
+            }
+            catch (error) {
+                const errorString = error.message;
+                const [, errorMessage, fromDirectory, toDirectory] = errorString.match(/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/);
+                console.error(chalk.red(errorMessage));
+            }
+        }
+        else if (command == "build") {
+            const file = f.getFileExtensionAndName(parsed_input.args[0]);
+            if (file.extension != "cpp") {
+                console.error(chalk.red("Currently can only build .cpp files"));
+                continue;
+            }
+            const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
+            if (child1.stderr.toString()) {
+                console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
+                continue;
+            }
+            const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
+            if (child2.stderr.toString()) {
+                console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
+                continue;
+            }
+            console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
+        }
+        else {
+            const child = spawnSync(command, parsed_input.args);
+            const stdout = child.stdout ? child.stdout.toString() : "";
+            const stderr = child.stderr ? child.stderr.toString() : "";
+            process.stdout.write(chalk.greenBright(stdout) || chalk.red(stderr));
+            child.error && console.log(chalk.red("error:", child.error?.message));
+        }
+    }
     if (db) {
         await SQLite3_DB.createTable(db, `
 			CREATE TABLE IF NOT EXISTS commit_log (
@@ -213,7 +248,7 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
 function user_input(prompt) {
     return new Promise((resolve) => {
         prompt && console.log(prompt);
-        process.stdout.write("> ");
+        process.stdout.write(">> ");
         const onData = (data) => {
             const userInput = data.toString().trim();
             resolve(userInput);
@@ -301,7 +336,6 @@ async function changeDirectory(path) {
                 });
             });
         })(`cd "${path}"`);
-        console.log(`Changed directory to: ${path}`);
     }
     catch (error) {
         console.error("Error changing directory:", error.message);
@@ -321,11 +355,19 @@ async function printWorkingDirectory() {
                 });
             });
         })("pwd");
-        console.log("Current working directory:", currentDirectory);
         return currentDirectory;
     }
     catch (error) {
         console.error("Error getting current working directory:", error.message);
         return null;
     }
+}
+function parse_input(input) {
+    const words = input.split(" ");
+    const command = words.shift();
+    const args = words;
+    return {
+        command: command,
+        args: args,
+    };
 }

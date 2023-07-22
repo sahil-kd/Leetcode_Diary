@@ -198,3 +198,17 @@ export function writeJson(filename: string, data: any): void {
 	const jsonData = JSON.stringify(data, null, 2);
 	writeFileSync(filename, jsonData, "utf8");
 }
+
+export function getFileExtensionAndName(path: string) {
+	// Extract the filename from the path
+	const filename = path.split("/").pop() || "";
+
+	// Extract the extension from the filename
+	const extension = filename.split(".").pop() || "";
+
+	// Remove the extension from the filename to get the name
+	const name = filename.slice(0, -(extension.length + 1));
+
+	// Create and return the object with the extension and name properties
+	return { extension, name };
+}

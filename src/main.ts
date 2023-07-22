@@ -10,7 +10,7 @@
 
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { exec } from "node:child_process";
+import { exec, execSync, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { PathLike, createReadStream, createWriteStream } from "node:fs";
@@ -236,37 +236,96 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 	// const db = await SQLite3_DB.connect("./db/test.db");
 	const db = undefined;
 
-	// const u_input = await user_input("\nEnter the command: ");
-	// console.log("User input: ", u_input);
-
-	// const u_input2 = await user_input("\nEnter another command: ");
-	// console.log("User input: ", u_input2);
-
-	const dirPath = "C:\\Users\\dell\\Desktop\\Inquirer adv egs";
+	let dirPath = "C:\\Users\\dell\\Desktop\\CSS experiments";
 
 	// const items = await listItemsInDirectory(`"${dirPath}"`); // <-- working
 	// items.forEach((item) => console.log(">> ", item));
 
-	process.stdout.write("\n");
+	while (true) {
+		process.stdout.write("\n");
+		process.stdout.write(
+			chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString())
+		); // hex("#9C33FF")
 
-	await printWorkingDirectory();
-	await changeDirectory("C:\\Users\\dell\\Desktop\\Cpp");
-	await printWorkingDirectory();
+		const input = await user_input();
+		const parsed_input = parse_input(input);
+		const command = parsed_input.command;
 
-	inquirer
-		.prompt([
-			{
-				type: "rawlist",
-				name: "list_item",
-				message: "Files: ",
-				// choices: getChoicesWithinRange(await listItemsInDirectory(`"${dirPath}"`), 1, 23),
-				choices: [new inquirer.Separator(), ...(await listItemsInDirectory(dirPath)), new inquirer.Separator()],
-				default: 0,
-			},
-		])
-		.then((selection) => {
-			console.log("You selected: ", selection.list_item);
-		});
+		if (!command) {
+			console.error(chalk.red("Invalid command"));
+			continue;
+		}
+
+		if (command === "exit") break;
+
+		// For "cd" command, handle it separately with process.chdir()
+		if (command === "cd") {
+			const targetDirectory = parsed_input.args[0];
+			try {
+				if (targetDirectory == "~") {
+					process.chdir(f.getUserHomeDirPath());
+					continue;
+				}
+				process.chdir(targetDirectory); // not available in worker threads
+			} catch (error: any) {
+				const errorString = error.message;
+				const [, errorMessage, fromDirectory, toDirectory] = errorString.match(
+					/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/
+				);
+				console.error(chalk.red(errorMessage));
+			}
+		} else if (command == "build") {
+			const file = f.getFileExtensionAndName(parsed_input.args[0]);
+			if (file.extension != "cpp") {
+				console.error(chalk.red("Currently can only build .cpp files"));
+				continue;
+			}
+
+			const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
+			if (child1.stderr.toString()) {
+				console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
+				continue;
+			}
+
+			const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
+			if (child2.stderr.toString()) {
+				console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
+				continue;
+			}
+
+			console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
+		} else {
+			const child = spawnSync(command, parsed_input.args);
+
+			// Convert Buffer objects to strings for stdout and stderr
+			const stdout = child.stdout ? child.stdout.toString() : "";
+			const stderr = child.stderr ? child.stderr.toString() : "";
+
+			process.stdout.write(chalk.greenBright(stdout) || chalk.red(stderr));
+			child.error && console.log(chalk.red("error:", child.error?.message));
+		}
+	}
+
+	// while (true) {
+	// 	const input = await user_input();
+	// 	const parsed_input = parse_input(input);
+	// 	const command = parsed_input.command;
+	// 	if (command) {
+	// 		if (command === "exit") break;
+	// 		const child = spawnSync(command, parsed_input.args);
+
+	// 		// Convert Buffer objects to strings for stdout and stderr
+	// 		const stdout = child.stdout ? child.stdout.toString() : "";
+	// 		const stderr = child.stderr ? child.stderr.toString() : "";
+
+	// 		console.log(chalk.cyanBright(stdout || stderr));
+	// 		child.error && console.log("error:", child.error?.message);
+	// 		console.log("status: ", child.status);
+	// 		console.log("signal: ", child.signal);
+	// 	} else {
+	// 		console.error(chalk.red("Invalid command"));
+	// 	}
+	// }
 
 	if (db) {
 		await SQLite3_DB.createTable(
@@ -355,7 +414,7 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 function user_input(prompt?: string): Promise<string> {
 	return new Promise((resolve) => {
 		prompt && console.log(prompt);
-		process.stdout.write("> ");
+		process.stdout.write(">> ");
 
 		const onData = (data: { toString: () => string }) => {
 			const userInput = data.toString().trim();
@@ -456,7 +515,7 @@ async function changeDirectory(path: string) {
 				});
 			});
 		})(`cd "${path}"`); // IIFE
-		console.log(`Changed directory to: ${path}`);
+		// console.log(`Changed directory to: ${path}`);
 	} catch (error: any) {
 		console.error("Error changing directory:", error.message);
 	}
@@ -475,10 +534,27 @@ async function printWorkingDirectory() {
 				});
 			});
 		})("pwd"); // IIFE
-		console.log("Current working directory:", currentDirectory);
 		return currentDirectory;
 	} catch (error: any) {
 		console.error("Error getting current working directory:", error.message);
 		return null;
 	}
+}
+
+function parse_input(input: string) {
+	// Split the input string into individual words
+	const words = input.split(" ");
+
+	// The first word is the command
+	const command = words.shift();
+
+	// The rest of the words are arguments
+	const args = words;
+
+	// return the object with the command and args properties
+
+	return {
+		command: command,
+		args: args,
+	};
 }
