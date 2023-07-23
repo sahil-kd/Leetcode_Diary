@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { exec, spawnSync } from "node:child_process";
+import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
@@ -215,7 +215,8 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
         if (command === "h") {
             console.log(chalk.cyanBright("List of commands -->"));
             console.log(chalk.cyanBright("  build --> builds the executable for a .cpp file that you can execute later | build filename.cpp "));
-            console.log(chalk.cyanBright("  run   --> builds and runs the executable for .cpp files | run filename.cpp"));
+            console.log(chalk.cyanBright("  run   --> builds and runs the executable for .cpp files | run filename.cpp | Not stable"));
+            console.log(chalk.redBright("  **run command is not stable, use build and run the executable by typing filename.exe and ENTER"));
             console.log(chalk.cyanBright('  cd    --> change directory | advisable to wrap the path in double-quotes "..."'));
             console.log(chalk.cyanBright("  exit  --> exits the app | recommended way"));
             continue;
@@ -274,9 +275,19 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
                 continue;
             }
             console.log(chalk.greenBright("Build successfully, running...\n"));
-            const child3 = spawnSync(`${file.name}.exe`);
-            console.log("output --> " + child3.stdout.toString());
-            console.error("error --> " + child3.stderr.toString());
+            const child3 = spawn(`${file.name}.exe`, { stdio: "pipe" });
+            child3.stdout.on("data", (data) => {
+                console.log(data.toString());
+            });
+            child3.stderr.on("data", (data) => {
+                console.error("Error: " + data.toString());
+            });
+            child3.on("close", (code) => {
+                console.log(`Child process exited with code ${code}`);
+            });
+            child3.stdin.write((await user_input()) + "\n");
+            child3.stdin.write((await user_input()) + "\n");
+            child3.stdin.end();
         }
         else {
             const child = spawnSync(command, parsed_input.args);

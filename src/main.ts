@@ -10,7 +10,7 @@
 
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { exec, spawnSync } from "node:child_process";
+import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { PathLike, createReadStream, createWriteStream } from "node:fs";
@@ -348,7 +348,7 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 		}
 
 		if (command === "exit") {
-			listener.removeAllListeners("db event");
+			listener.removeAllListeners("db event"); // also need to run background processes to ensure cleanup when user abruptly closes the app
 			break;
 		}
 
@@ -360,7 +360,14 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 				)
 			);
 			// no stdin method linked in the run command to recieve input for the child process --> no input to cpp file, only output
-			console.log(chalk.cyanBright("  run   --> builds and runs the executable for .cpp files | run filename.cpp"));
+			console.log(
+				chalk.cyanBright("  run   --> builds and runs the executable for .cpp files | run filename.cpp | Not stable")
+			);
+			console.log(
+				chalk.redBright(
+					"  **run command is not stable, use build and run the executable by typing filename.exe and ENTER"
+				)
+			);
 			console.log(chalk.cyanBright('  cd    --> change directory | advisable to wrap the path in double-quotes "..."'));
 			console.log(chalk.cyanBright("  exit  --> exits the app | recommended way"));
 			// console.log(chalk.cyanBright("  "));
@@ -426,9 +433,27 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 			}
 
 			console.log(chalk.greenBright("Build successfully, running...\n"));
-			const child3 = spawnSync(`${file.name}.exe`);
-			console.log("output --> " + child3.stdout.toString());
-			console.error("error --> " + child3.stderr.toString());
+
+			const child3 = spawn(`${file.name}.exe`, { stdio: "pipe" });
+
+			// Event listener for capturing the output of the child process
+			child3.stdout.on("data", (data) => {
+				console.log(data.toString());
+			});
+
+			// Event listener for capturing any errors from the child process
+			child3.stderr.on("data", (data) => {
+				console.error("Error: " + data.toString());
+			});
+
+			// Event listener for handling the completion of the child process
+			child3.on("close", (code) => {
+				console.log(`Child process exited with code ${code}`);
+			});
+
+			child3.stdin.write((await user_input()) + "\n");
+			child3.stdin.write((await user_input()) + "\n");
+			child3.stdin.end();
 			// no stdin method linked to recieve input for the child process --> no input to cpp file, only output
 		} else {
 			const child = spawnSync(command, parsed_input.args);
