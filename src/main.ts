@@ -10,11 +10,12 @@
 
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { exec, execSync, spawn, spawnSync } from "node:child_process";
+import { exec, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { PathLike, createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
+import { EventEmitter } from "node:events";
 
 class SQLite3_DB {
 	static connect(dbFilePath: string) {
@@ -220,6 +221,14 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 
 	/* End of setup process */
 
+	/* Event listensers section */
+
+	const listener = new EventEmitter();
+
+	listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
+
+	/* Event listensers section exit */
+
 	/* Database entry point --> later move .db to %LOCALAPPDATA% & %APPDATA% --> No need to abstract as in if-else in else we can run code on success & is faster */
 
 	interface userCommitLogEntry {
@@ -233,99 +242,11 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 		commit_msg: string | null;
 	} // Type of row / entry into the table --> each attr is a column
 
-	// const db = await SQLite3_DB.connect("./db/test.db");
-	const db = undefined;
-
-	let dirPath = "C:\\Users\\dell\\Desktop\\CSS experiments";
-
 	// const items = await listItemsInDirectory(`"${dirPath}"`); // <-- working
 	// items.forEach((item) => console.log(">> ", item));
 
-	while (true) {
-		process.stdout.write("\n");
-		process.stdout.write(
-			chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString())
-		); // hex("#9C33FF")
-
-		const input = await user_input();
-		const parsed_input = parse_command(input);
-		const command = parsed_input.command;
-
-		if (!command) {
-			console.error(chalk.red("Invalid command"));
-			continue;
-		}
-
-		if (command === "exit") break;
-
-		// For "cd" command, handle it separately with process.chdir()
-		if (command === "cd") {
-			const targetDirectory = parsed_input.args[0];
-			try {
-				if (targetDirectory == "~") {
-					process.chdir(f.getUserHomeDirPath());
-					continue;
-				}
-				process.chdir(targetDirectory); // not available in worker threads
-			} catch (error: any) {
-				const errorString = error.message;
-				const [, errorMessage, fromDirectory, toDirectory] = errorString.match(
-					/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/
-				);
-				console.error(chalk.red(errorMessage));
-			}
-		} else if (command == "build") {
-			const file = f.getFileExtensionAndName(parsed_input.args[0]);
-			if (file.extension != "cpp") {
-				console.error(chalk.red("Currently can only build .cpp files"));
-				continue;
-			}
-
-			const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
-			if (child1.stderr.toString()) {
-				console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
-				continue;
-			}
-
-			const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
-			if (child2.stderr.toString()) {
-				console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
-				continue;
-			}
-
-			console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
-		} else {
-			const child = spawnSync(command, parsed_input.args);
-
-			// Convert Buffer objects to strings for stdout and stderr
-			const stdout = child.stdout ? child.stdout.toString() : "";
-			const stderr = child.stderr ? child.stderr.toString() : "";
-
-			process.stdout.write(chalk.greenBright(stdout) || chalk.red(stderr));
-			child.error && console.log(chalk.red("error:", child.error?.message));
-		}
-	}
-
-	// while (true) {
-	// 	const input = await user_input();
-	// 	const parsed_input = parse_input(input);
-	// 	const command = parsed_input.command;
-	// 	if (command) {
-	// 		if (command === "exit") break;
-	// 		const child = spawnSync(command, parsed_input.args);
-
-	// 		// Convert Buffer objects to strings for stdout and stderr
-	// 		const stdout = child.stdout ? child.stdout.toString() : "";
-	// 		const stderr = child.stderr ? child.stderr.toString() : "";
-
-	// 		console.log(chalk.cyanBright(stdout || stderr));
-	// 		child.error && console.log("error:", child.error?.message);
-	// 		console.log("status: ", child.status);
-	// 		console.log("signal: ", child.signal);
-	// 	} else {
-	// 		console.error(chalk.red("Invalid command"));
-	// 	}
-	// }
+	// const db = await SQLite3_DB.connect("./db/test.db");
+	const db = undefined;
 
 	if (db) {
 		await SQLite3_DB.createTable(
@@ -402,8 +323,85 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 
 	/* Database exit point */
 
-	// const u_input3 = await user_input("Enter 3rd command: ");
-	// console.log("User input: ", u_input3);
+	/* User input section */
+
+	while (true) {
+		process.stdout.write("\n");
+		process.stdout.write(
+			chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString())
+		); // hex("#9C33FF")
+
+		const input = await user_input();
+		const parsed_input = parse_command(input);
+		const command = parsed_input.command;
+
+		if (!command) {
+			console.error(chalk.red("Invalid command"));
+			continue;
+		}
+
+		if (command === "fire") {
+			listener.emit("db event", "arg1", "arg10");
+			continue;
+		}
+
+		if (command === "exit") {
+			listener.removeAllListeners("db event");
+			break;
+		}
+
+		// For "cd" command, handle it separately with process.chdir()
+		if (command === "cd") {
+			const targetDirectory = parsed_input.args[0];
+			try {
+				if (targetDirectory == "~") {
+					process.chdir(f.getUserHomeDirPath());
+					continue;
+				} else if (targetDirectory == "-") {
+					console.error(chalk.red("Directory quick switch currently unsupported"));
+					continue;
+				}
+				process.chdir(targetDirectory); // not available in worker threads
+			} catch (error: any) {
+				const errorString = error.message;
+				const [, errorMessage, _fromDirectory, _toDirectory] = errorString.match(
+					/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/
+				);
+				console.error(chalk.red(errorMessage));
+			}
+		} else if (command == "build") {
+			const file = f.getFileExtensionAndName(parsed_input.args[0]);
+			if (file.extension != "cpp") {
+				console.error(chalk.red("Currently can only build .cpp files"));
+				continue;
+			}
+
+			const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
+			if (child1.stderr.toString()) {
+				console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
+				continue;
+			}
+
+			const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
+			if (child2.stderr.toString()) {
+				console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
+				continue;
+			}
+
+			console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
+		} else {
+			const child = spawnSync(command, parsed_input.args);
+
+			// Convert Buffer objects to strings for stdout and stderr
+			const stdout = child.stdout ? child.stdout.toString() : "";
+			const stderr = child.stderr ? child.stderr.toString() : "";
+
+			process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
+			child.error && console.log(chalk.red("error:", child.error.message));
+		}
+	}
+
+	/* User input section end */
 
 	// /* Program exit */
 	// process.stdin.destroy(); // destroying any open input stream to properly exit --> working

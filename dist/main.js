@@ -4,6 +4,7 @@ import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
+import { EventEmitter } from "node:events";
 class SQLite3_DB {
     static connect(dbFilePath) {
         return new Promise((resolve) => {
@@ -160,61 +161,9 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
     f.createDir(f.joinPath(tmpdirPath, "leetcodeislife", "Current session storage", "log"));
     const currentDateTime = getLocalDateTime();
     console.log(currentDateTime);
+    const listener = new EventEmitter();
+    listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
     const db = undefined;
-    let dirPath = "C:\\Users\\dell\\Desktop\\CSS experiments";
-    while (true) {
-        process.stdout.write("\n");
-        process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString()));
-        const input = await user_input();
-        const parsed_input = parse_command(input);
-        const command = parsed_input.command;
-        if (!command) {
-            console.error(chalk.red("Invalid command"));
-            continue;
-        }
-        if (command === "exit")
-            break;
-        if (command === "cd") {
-            const targetDirectory = parsed_input.args[0];
-            try {
-                if (targetDirectory == "~") {
-                    process.chdir(f.getUserHomeDirPath());
-                    continue;
-                }
-                process.chdir(targetDirectory);
-            }
-            catch (error) {
-                const errorString = error.message;
-                const [, errorMessage, fromDirectory, toDirectory] = errorString.match(/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/);
-                console.error(chalk.red(errorMessage));
-            }
-        }
-        else if (command == "build") {
-            const file = f.getFileExtensionAndName(parsed_input.args[0]);
-            if (file.extension != "cpp") {
-                console.error(chalk.red("Currently can only build .cpp files"));
-                continue;
-            }
-            const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
-            if (child1.stderr.toString()) {
-                console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
-                continue;
-            }
-            const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
-            if (child2.stderr.toString()) {
-                console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
-                continue;
-            }
-            console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
-        }
-        else {
-            const child = spawnSync(command, parsed_input.args);
-            const stdout = child.stdout ? child.stdout.toString() : "";
-            const stderr = child.stderr ? child.stderr.toString() : "";
-            process.stdout.write(chalk.greenBright(stdout) || chalk.red(stderr));
-            child.error && console.log(chalk.red("error:", child.error?.message));
-        }
-    }
     if (db) {
         await SQLite3_DB.createTable(db, `
 			CREATE TABLE IF NOT EXISTS commit_log (
@@ -243,6 +192,69 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
         await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
         await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
         await SQLite3_DB.disconnect(db);
+    }
+    while (true) {
+        process.stdout.write("\n");
+        process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString()));
+        const input = await user_input();
+        const parsed_input = parse_command(input);
+        const command = parsed_input.command;
+        if (!command) {
+            console.error(chalk.red("Invalid command"));
+            continue;
+        }
+        if (command === "fire") {
+            listener.emit("db event", "arg1", "arg10");
+            continue;
+        }
+        if (command === "exit") {
+            listener.removeAllListeners("db event");
+            break;
+        }
+        if (command === "cd") {
+            const targetDirectory = parsed_input.args[0];
+            try {
+                if (targetDirectory == "~") {
+                    process.chdir(f.getUserHomeDirPath());
+                    continue;
+                }
+                else if (targetDirectory == "-") {
+                    console.error(chalk.red("Directory quick switch currently unsupported"));
+                    continue;
+                }
+                process.chdir(targetDirectory);
+            }
+            catch (error) {
+                const errorString = error.message;
+                const [, errorMessage, _fromDirectory, _toDirectory] = errorString.match(/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/);
+                console.error(chalk.red(errorMessage));
+            }
+        }
+        else if (command == "build") {
+            const file = f.getFileExtensionAndName(parsed_input.args[0]);
+            if (file.extension != "cpp") {
+                console.error(chalk.red("Currently can only build .cpp files"));
+                continue;
+            }
+            const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
+            if (child1.stderr.toString()) {
+                console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
+                continue;
+            }
+            const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
+            if (child2.stderr.toString()) {
+                console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
+                continue;
+            }
+            console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
+        }
+        else {
+            const child = spawnSync(command, parsed_input.args);
+            const stdout = child.stdout ? child.stdout.toString() : "";
+            const stderr = child.stderr ? child.stderr.toString() : "";
+            process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
+            child.error && console.log(chalk.red("error:", child.error.message));
+        }
     }
 })();
 function user_input(prompt) {
