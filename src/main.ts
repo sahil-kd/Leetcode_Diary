@@ -168,6 +168,8 @@ class SQLite3_DB {
 
 console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App Title
 
+console.log(chalk.hex("#9C33FF")("h --> help"));
+
 /* *** main() function below *** */
 
 (async function main() {
@@ -350,6 +352,21 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 			break;
 		}
 
+		if (command === "h") {
+			console.log(chalk.cyanBright("List of commands -->"));
+			console.log(
+				chalk.cyanBright(
+					"  build --> builds the executable for a .cpp file that you can execute later | build filename.cpp "
+				)
+			);
+			// no stdin method linked in the run command to recieve input for the child process --> no input to cpp file, only output
+			console.log(chalk.cyanBright("  run   --> builds and runs the executable for .cpp files | run filename.cpp"));
+			console.log(chalk.cyanBright('  cd    --> change directory | advisable to wrap the path in double-quotes "..."'));
+			console.log(chalk.cyanBright("  exit  --> exits the app | recommended way"));
+			// console.log(chalk.cyanBright("  "));
+			continue;
+		}
+
 		// For "cd" command, handle it separately with process.chdir()
 		if (command === "cd") {
 			const targetDirectory = parsed_input.args[0];
@@ -389,6 +406,30 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 			}
 
 			console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
+		} else if (command == "run") {
+			const file = f.getFileExtensionAndName(parsed_input.args[0]);
+			if (file.extension != "cpp") {
+				console.error(chalk.red("Currently can only build .cpp files"));
+				continue;
+			}
+
+			const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
+			if (child1.stderr.toString()) {
+				console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
+				continue;
+			}
+
+			const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
+			if (child2.stderr.toString()) {
+				console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
+				continue;
+			}
+
+			console.log(chalk.greenBright("Build successfully, running...\n"));
+			const child3 = spawnSync(`${file.name}.exe`);
+			console.log("output --> " + child3.stdout.toString());
+			console.error("error --> " + child3.stderr.toString());
+			// no stdin method linked to recieve input for the child process --> no input to cpp file, only output
 		} else {
 			const child = spawnSync(command, parsed_input.args);
 
