@@ -166,7 +166,7 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
         process.stdout.write("\n");
         process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString()));
         const input = await user_input();
-        const parsed_input = parse_input(input);
+        const parsed_input = parse_command(input);
         const command = parsed_input.command;
         if (!command) {
             console.error(chalk.red("Invalid command"));
@@ -362,12 +362,41 @@ async function printWorkingDirectory() {
         return null;
     }
 }
-function parse_input(input) {
-    const words = input.split(" ");
-    const command = words.shift();
-    const args = words;
+function parse_command(str) {
+    const arr = [];
+    let i = 0;
+    while (i < str.length) {
+        if (str[i] === '"') {
+            i++;
+            const endIndex = str.indexOf('"', i);
+            if (endIndex !== -1) {
+                arr.push(str.substring(i, endIndex));
+                i = endIndex + 1;
+            }
+        }
+        else if (str[i] === "'") {
+            i++;
+            const endIndex = str.indexOf("'", i);
+            if (endIndex !== -1) {
+                arr.push(str.substring(i, endIndex));
+                i = endIndex + 1;
+            }
+        }
+        else if (str[i] !== " ") {
+            let puff = "";
+            while (i < str.length && str[i] !== " " && str[i] !== '"') {
+                puff += str[i];
+                i++;
+            }
+            arr.push(puff);
+        }
+        else {
+            i++;
+        }
+    }
+    const command = arr.shift();
     return {
         command: command,
-        args: args,
+        args: arr,
     };
 }

@@ -248,7 +248,7 @@ console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App
 		); // hex("#9C33FF")
 
 		const input = await user_input();
-		const parsed_input = parse_input(input);
+		const parsed_input = parse_command(input);
 		const command = parsed_input.command;
 
 		if (!command) {
@@ -541,20 +541,44 @@ async function printWorkingDirectory() {
 	}
 }
 
-function parse_input(input: string) {
-	// Split the input string into individual words
-	const words = input.split(" ");
+function parse_command(str: string) {
+	const arr: string[] = [];
+	let i = 0;
 
-	// The first word is the command
-	const command = words.shift();
+	while (i < str.length) {
+		if (str[i] === '"') {
+			// Handle quoted sections
+			i++;
+			const endIndex = str.indexOf('"', i);
+			if (endIndex !== -1) {
+				arr.push(str.substring(i, endIndex));
+				i = endIndex + 1;
+			}
+		} else if (str[i] === "'") {
+			// Handle quoted sections
+			i++;
+			const endIndex = str.indexOf("'", i);
+			if (endIndex !== -1) {
+				arr.push(str.substring(i, endIndex));
+				i = endIndex + 1;
+			}
+		} else if (str[i] !== " ") {
+			// Handle regular sections
+			let puff = "";
+			while (i < str.length && str[i] !== " " && str[i] !== '"') {
+				puff += str[i];
+				i++;
+			}
+			arr.push(puff);
+		} else {
+			i++;
+		}
+	}
 
-	// The rest of the words are arguments
-	const args = words;
-
-	// return the object with the command and args properties
+	const command = arr.shift();
 
 	return {
 		command: command,
-		args: args,
+		args: arr,
 	};
 }
