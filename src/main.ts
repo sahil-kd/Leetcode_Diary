@@ -347,7 +347,7 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 			continue;
 		}
 
-		if (command === "exit") {
+		if (command === "exit" || command === "q") {
 			listener.removeAllListeners("db event"); // also need to run background processes to ensure cleanup when user abruptly closes the app
 			break;
 		}
@@ -356,20 +356,19 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 			console.log(chalk.cyanBright("List of commands -->"));
 			console.log(
 				chalk.cyanBright(
-					"  build --> builds the executable for a .cpp file that you can execute later | build filename.cpp "
+					"  build --> builds the executable for a .cpp file that you can execute later using run command"
 				)
 			);
-			// no stdin method linked in the run command to recieve input for the child process --> no input to cpp file, only output
-			console.log(
-				chalk.cyanBright("  run   --> builds and runs the executable for .cpp files | run filename.cpp | Not stable")
-			);
+			console.log(chalk.cyanBright("            build filename.cpp "));
+			console.log(chalk.cyanBright("  run   --> builds and runs the executable for .cpp file | run filename.cpp"));
 			console.log(
 				chalk.redBright(
-					"  **run command is not stable, use build and run the executable by typing filename.exe and ENTER"
+					"          **Don't run the .exe file directly by typing filename.exe, it won't work as expected"
 				)
 			);
+			console.log(chalk.redBright("            instead use the run command above"));
 			console.log(chalk.cyanBright('  cd    --> change directory | advisable to wrap the path in double-quotes "..."'));
-			console.log(chalk.cyanBright("  exit  --> exits the app | recommended way"));
+			console.log(chalk.cyanBright("  q | exit  --> exits the app | recommended way"));
 			// console.log(chalk.cyanBright("  "));
 			continue;
 		}
@@ -412,11 +411,11 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 				continue;
 			}
 
-			console.log(chalk.greenBright(`Build successfull. To execute the file type ${file.name}.exe and ENTER`));
+			console.log(chalk.greenBright(`Build successfull. To execute the file type run ${file.name}.cpp and ENTER`));
 		} else if (command == "run") {
 			const file = f.getFileExtensionAndName(parsed_input.args[0]);
 			if (file.extension != "cpp") {
-				console.error(chalk.red("Currently can only build .cpp files"));
+				console.error(chalk.red("Currently can only run .cpp files, type run filename.cpp"));
 				continue;
 			}
 
@@ -432,7 +431,7 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 				continue;
 			}
 
-			console.log(chalk.greenBright("Build successfully, running...\n"));
+			console.log(chalk.greenBright("Build successfully, running..."));
 
 			const child3 = spawn(`${file.name}.exe`, { stdio: "pipe" });
 
@@ -446,14 +445,19 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 				console.error("Error: " + data.toString());
 			});
 
+			let term_open = true;
+
 			// Event listener for handling the completion of the child process
 			child3.on("close", (code) => {
-				console.log(`Child process exited with code ${code}`);
-			});
+				process.stdout.write(`\nProcess exited with code ${code}, press any key to continue`);
+				term_open = false;
+			}); // end the while loop when this event fired and use a diff input method to treat entire user input as a string for whitespaces
 
-			child3.stdin.write((await user_input()) + "\n");
-			child3.stdin.write((await user_input()) + "\n");
-			child3.stdin.end();
+			while (term_open) {
+				const inp = await user_input("", false);
+				child3.stdin.write(inp + "\n");
+			}
+
 			// no stdin method linked to recieve input for the child process --> no input to cpp file, only output
 		} else {
 			const child = spawnSync(command, parsed_input.args);
@@ -475,10 +479,10 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 
 /* *** End of main() function above *** */
 
-function user_input(prompt?: string): Promise<string> {
+function user_input(prompt?: string, input_guide: boolean = true): Promise<string> {
 	return new Promise((resolve) => {
-		prompt && console.log(prompt);
-		process.stdout.write(">> ");
+		prompt && process.stdout.write(prompt);
+		input_guide && process.stdout.write(">> ");
 
 		const onData = (data: { toString: () => string }) => {
 			const userInput = data.toString().trim();
