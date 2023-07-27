@@ -338,7 +338,7 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 		const command = parsed_input.command;
 
 		if (!command) {
-			console.error(chalk.red("Invalid command"));
+			console.error(chalk.red("No command entered | Type h to view the list of all in-app commands"));
 			continue;
 		}
 
@@ -353,7 +353,11 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 		}
 
 		if (command === "h") {
-			console.log(chalk.cyanBright("List of commands -->"));
+			if (parsed_input.args.length != 0) {
+				console.error(chalk.red("Incorrect usage | Type h for help menu"));
+				continue;
+			}
+			console.log(chalk.cyanBright("List of commands: \n"));
 			console.log(
 				chalk.cyanBright(
 					"  build --> builds the executable for a .cpp file that you can execute later using run command"
@@ -367,15 +371,21 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 				)
 			);
 			console.log(chalk.redBright("            instead use the run command above"));
-			console.log(chalk.cyanBright('  cd    --> change directory | advisable to wrap the path in double-quotes "..."'));
+			console.log(chalk.cyanBright("  cd    --> change directory | advisable to wrap the path in single-quotes '...'"));
+			console.log("----------------------------------------------------------------------------------------------");
 			console.log(chalk.cyanBright("  q | exit  --> exits the app | recommended way"));
-			// console.log(chalk.cyanBright("  "));
+			console.log(chalk.redBright("     **Basic commands of default terminals valid here too"));
 			continue;
 		}
 
 		// For "cd" command, handle it separately with process.chdir()
 		if (command === "cd") {
 			const targetDirectory = parsed_input.args[0];
+			if (parsed_input.args.length == 0) {
+				console.error(chalk.red("No path provided | To resolve enter a path --> cd path/to/folderOrFilename.ext"));
+				continue;
+			}
+
 			try {
 				if (targetDirectory == "~") {
 					process.chdir(f.getUserHomeDirPath());
@@ -387,12 +397,26 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 				process.chdir(targetDirectory); // not available in worker threads
 			} catch (error: any) {
 				const errorString = error.message;
-				const [, errorMessage, _fromDirectory, _toDirectory] = errorString.match(
-					/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/
-				);
-				console.error(chalk.red(errorMessage));
+				try {
+					const [, errorMessage, _fromDirectory, _toDirectory] = errorString.match(
+						/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/
+					);
+					console.error(chalk.red(errorMessage));
+					console.error(
+						chalk.red("Tip: use single-quotes to wrap the path containing spaces | cd 'path/to/file name.ext'")
+					); // error-message simplifier
+				} catch (err) {
+					if (err) console.error(chalk.red(errorString));
+				} // activates when error-message simplifier fails --> safeguard in place cause error-msg simplifier relies on pattern-matching
 			}
 		} else if (command == "build") {
+			if (parsed_input.args.length == 0) {
+				console.error(
+					chalk.red("No path provided | To resolve enter the cpp file path --> build path/to/filename.cpp")
+				);
+				continue;
+			}
+
 			const file = f.getFileExtensionAndName(parsed_input.args[0]);
 			if (file.extension != "cpp") {
 				console.error(chalk.red("Currently can only build .cpp files"));
@@ -413,6 +437,11 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 
 			console.log(chalk.greenBright(`Build successfull. To execute the file type run ${file.name}.cpp and ENTER`));
 		} else if (command == "run") {
+			if (parsed_input.args.length == 0) {
+				console.error(chalk.red("No path provided | To resolve enter the cpp file path --> run path/to/filename.cpp"));
+				continue;
+			}
+
 			const file = f.getFileExtensionAndName(parsed_input.args[0]);
 			if (file.extension != "cpp") {
 				console.error(chalk.red("Currently can only run .cpp files, type run filename.cpp"));
@@ -431,18 +460,18 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 				continue;
 			}
 
-			console.log(chalk.greenBright("Build successfully, running..."));
+			console.log(chalk.greenBright("Build successfully, running...\n"));
 
 			const child3 = spawn(`${file.name}.exe`, { stdio: "pipe" });
 
 			// Event listener for capturing the output of the child process
 			child3.stdout.on("data", (data) => {
-				console.log(data.toString());
+				process.stdout.write(data.toString());
 			});
 
 			// Event listener for capturing any errors from the child process
 			child3.stderr.on("data", (data) => {
-				console.error("Error: " + data.toString());
+				process.stderr.write(chalk.redBright("\nError: " + data.toString()));
 			});
 
 			let term_open = true;
@@ -455,7 +484,7 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 
 			while (term_open) {
 				const inp = await user_input("", false);
-				child3.stdin.write(inp + "\n");
+				child3.stdin.write(inp + "\n"); // this \n is necessary as it signals user pressing ENTER
 			}
 
 			// no stdin method linked to recieve input for the child process --> no input to cpp file, only output
@@ -467,7 +496,11 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 			const stderr = child.stderr ? child.stderr.toString() : "";
 
 			process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
-			child.error && console.log(chalk.red("error:", child.error.message));
+			if (child.error) {
+				/^spawnSync\s\w+\sENOENT$/.test(child.error?.message)
+					? console.error(chalk.red(`${command}: unrecognised command | Type h for help`))
+					: console.error(chalk.red("Error:", child.error.message));
+			}
 		}
 	}
 

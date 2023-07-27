@@ -201,7 +201,7 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
         const parsed_input = parse_command(input);
         const command = parsed_input.command;
         if (!command) {
-            console.error(chalk.red("Invalid command"));
+            console.error(chalk.red("No command entered | Type h to view the list of all in-app commands"));
             continue;
         }
         if (command === "fire") {
@@ -213,18 +213,28 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             break;
         }
         if (command === "h") {
-            console.log(chalk.cyanBright("List of commands -->"));
+            if (parsed_input.args.length != 0) {
+                console.error(chalk.red("Incorrect usage | Type h for help menu"));
+                continue;
+            }
+            console.log(chalk.cyanBright("List of commands: \n"));
             console.log(chalk.cyanBright("  build --> builds the executable for a .cpp file that you can execute later using run command"));
             console.log(chalk.cyanBright("            build filename.cpp "));
             console.log(chalk.cyanBright("  run   --> builds and runs the executable for .cpp file | run filename.cpp"));
             console.log(chalk.redBright("          **Don't run the .exe file directly by typing filename.exe, it won't work as expected"));
             console.log(chalk.redBright("            instead use the run command above"));
-            console.log(chalk.cyanBright('  cd    --> change directory | advisable to wrap the path in double-quotes "..."'));
+            console.log(chalk.cyanBright("  cd    --> change directory | advisable to wrap the path in single-quotes '...'"));
+            console.log("----------------------------------------------------------------------------------------------");
             console.log(chalk.cyanBright("  q | exit  --> exits the app | recommended way"));
+            console.log(chalk.redBright("     **Basic commands of default terminals valid here too"));
             continue;
         }
         if (command === "cd") {
             const targetDirectory = parsed_input.args[0];
+            if (parsed_input.args.length == 0) {
+                console.error(chalk.red("No path provided | To resolve enter a path --> cd path/to/folderOrFilename.ext"));
+                continue;
+            }
             try {
                 if (targetDirectory == "~") {
                     process.chdir(f.getUserHomeDirPath());
@@ -238,11 +248,22 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             }
             catch (error) {
                 const errorString = error.message;
-                const [, errorMessage, _fromDirectory, _toDirectory] = errorString.match(/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/);
-                console.error(chalk.red(errorMessage));
+                try {
+                    const [, errorMessage, _fromDirectory, _toDirectory] = errorString.match(/ENOENT: (.*), chdir '(.*?)' -> '(.*?)'/);
+                    console.error(chalk.red(errorMessage));
+                    console.error(chalk.red("Tip: use single-quotes to wrap the path containing spaces | cd 'path/to/file name.ext'"));
+                }
+                catch (err) {
+                    if (err)
+                        console.error(chalk.red(errorString));
+                }
             }
         }
         else if (command == "build") {
+            if (parsed_input.args.length == 0) {
+                console.error(chalk.red("No path provided | To resolve enter the cpp file path --> build path/to/filename.cpp"));
+                continue;
+            }
             const file = f.getFileExtensionAndName(parsed_input.args[0]);
             if (file.extension != "cpp") {
                 console.error(chalk.red("Currently can only build .cpp files"));
@@ -261,6 +282,10 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             console.log(chalk.greenBright(`Build successfull. To execute the file type run ${file.name}.cpp and ENTER`));
         }
         else if (command == "run") {
+            if (parsed_input.args.length == 0) {
+                console.error(chalk.red("No path provided | To resolve enter the cpp file path --> run path/to/filename.cpp"));
+                continue;
+            }
             const file = f.getFileExtensionAndName(parsed_input.args[0]);
             if (file.extension != "cpp") {
                 console.error(chalk.red("Currently can only run .cpp files, type run filename.cpp"));
@@ -276,13 +301,13 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
                 console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
                 continue;
             }
-            console.log(chalk.greenBright("Build successfully, running..."));
+            console.log(chalk.greenBright("Build successfully, running...\n"));
             const child3 = spawn(`${file.name}.exe`, { stdio: "pipe" });
             child3.stdout.on("data", (data) => {
-                console.log(data.toString());
+                process.stdout.write(data.toString());
             });
             child3.stderr.on("data", (data) => {
-                console.error("Error: " + data.toString());
+                process.stderr.write(chalk.redBright("\nError: " + data.toString()));
             });
             let term_open = true;
             child3.on("close", (code) => {
@@ -299,7 +324,11 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             const stdout = child.stdout ? child.stdout.toString() : "";
             const stderr = child.stderr ? child.stderr.toString() : "";
             process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
-            child.error && console.log(chalk.red("error:", child.error.message));
+            if (child.error) {
+                /^spawnSync\s\w+\sENOENT$/.test(child.error?.message)
+                    ? console.error(chalk.red(`${command}: unrecognised command | Type h for help`))
+                    : console.error(chalk.red("Error:", child.error.message));
+            }
         }
     }
 })();
