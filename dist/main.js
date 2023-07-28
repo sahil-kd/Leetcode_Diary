@@ -197,6 +197,7 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
     while (true) {
         process.stdout.write("\n");
         process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(process.cwd()));
+        process.stdout.write("\n");
         const child_terminal_input = await user_input();
         const parsed_input = parse_command(child_terminal_input);
         const command = parsed_input.command;
