@@ -329,12 +329,10 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 
 	while (true) {
 		process.stdout.write("\n");
-		process.stdout.write(
-			chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString())
-		); // hex("#9C33FF")
+		process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(process.cwd())); // hex("#9C33FF")
 
-		const input = await user_input();
-		const parsed_input = parse_command(input);
+		const child_terminal_input = await user_input();
+		const parsed_input = parse_command(child_terminal_input);
 		const command = parsed_input.command;
 
 		if (!command) {
@@ -489,17 +487,29 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 
 			// no stdin method linked to recieve input for the child process --> no input to cpp file, only output
 		} else {
-			const child = spawnSync(command, parsed_input.args);
+			const child = spawnSync(command, parsed_input.args, { stdio: "pipe" }); // by default runs on cmd.exe
 
 			// Convert Buffer objects to strings for stdout and stderr
 			const stdout = child.stdout ? child.stdout.toString() : "";
 			const stderr = child.stderr ? child.stderr.toString() : "";
 
 			process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
+
 			if (child.error) {
-				/^spawnSync\s\w+\sENOENT$/.test(child.error?.message)
-					? console.error(chalk.red(`${command}: unrecognised command | Type h for help`))
-					: console.error(chalk.red("Error:", child.error.message));
+				if (/^spawnSync\s\w+\sENOENT$/.test(child.error.message)) {
+					// above condition is checking for no entity (found) error of spawnSync method
+					const child_powershell = spawnSync(command, parsed_input.args, { stdio: "pipe", shell: "powershell.exe" });
+					// runs on powershell when cmd.exe fails to execute command --> stdio: inherit by default
+					// powershell not run by default cause each time shell: "powershell.exe" takes time to setup and execute, while cmd.exe is fast
+
+					// Convert Buffer objects to strings for stdout and stderr
+					const stdout = child_powershell.stdout ? child_powershell.stdout.toString() : "";
+					const stderr = child_powershell.stderr ? child_powershell.stderr.toString() : "";
+					process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
+					stderr != "" && console.error(chalk.red(`${command}: unrecognised command | Type h for help`));
+				} else {
+					console.error(chalk.red("Error:", child.error.message));
+				}
 			}
 		}
 	}

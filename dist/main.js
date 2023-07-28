@@ -196,9 +196,9 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
     }
     while (true) {
         process.stdout.write("\n");
-        process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(spawnSync("pwd").stdout.toString()));
-        const input = await user_input();
-        const parsed_input = parse_command(input);
+        process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(process.cwd()));
+        const child_terminal_input = await user_input();
+        const parsed_input = parse_command(child_terminal_input);
         const command = parsed_input.command;
         if (!command) {
             console.error(chalk.red("No command entered | Type h to view the list of all in-app commands"));
@@ -320,14 +320,21 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             }
         }
         else {
-            const child = spawnSync(command, parsed_input.args);
+            const child = spawnSync(command, parsed_input.args, { stdio: "pipe" });
             const stdout = child.stdout ? child.stdout.toString() : "";
             const stderr = child.stderr ? child.stderr.toString() : "";
             process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
             if (child.error) {
-                /^spawnSync\s\w+\sENOENT$/.test(child.error?.message)
-                    ? console.error(chalk.red(`${command}: unrecognised command | Type h for help`))
-                    : console.error(chalk.red("Error:", child.error.message));
+                if (/^spawnSync\s\w+\sENOENT$/.test(child.error.message)) {
+                    const child_powershell = spawnSync(command, parsed_input.args, { stdio: "pipe", shell: "powershell.exe" });
+                    const stdout = child_powershell.stdout ? child_powershell.stdout.toString() : "";
+                    const stderr = child_powershell.stderr ? child_powershell.stderr.toString() : "";
+                    process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
+                    stderr != "" && console.error(chalk.red(`${command}: unrecognised command | Type h for help`));
+                }
+                else {
+                    console.error(chalk.red("Error:", child.error.message));
+                }
             }
         }
     }
