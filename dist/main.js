@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import chalk from "chalk";
 import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
@@ -123,10 +124,20 @@ class SQLite3_DB {
             });
         });
     }
+    static eventEmitter = class extends EventEmitter {
+        constructor() {
+            super();
+        }
+        insertRow(...args) {
+            console.log("function running | class working", args ? args : "");
+        }
+    };
 }
-console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
-console.log(chalk.hex("#9C33FF")("h --> help"));
+const dfg = new SQLite3_DB.eventEmitter();
+dfg.insertRow("arg1", "arg2", 3);
 (async function main() {
+    console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
+    console.log(chalk.hex("#9C33FF")("h --> help"));
     f.getMemoryLog();
     console.log(`> pwd is ${f.currentDir()}`);
     const programFilesPath = process.env.PROGRAMFILES;
@@ -205,13 +216,18 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             console.error(chalk.red("No command entered | Type h to view the list of all in-app commands"));
             continue;
         }
-        if (command === "fire") {
-            listener.emit("db event", "arg1", "arg10");
+        else if (command === "fire") {
+            const default_args = ["default1", "default2"];
+            listener.emit("db event", ...(parsed_input.args.length > 0 ? parsed_input.args : default_args));
             continue;
         }
-        if (command === "exit" || command === "q") {
+        else if (command === "exit" || command === "q") {
             listener.removeAllListeners("db event");
             break;
+        }
+        else if (command === "pwd") {
+            console.log(chalk.cyanBright(process.cwd()));
+            continue;
         }
         if (command === "h") {
             if (parsed_input.args.length != 0) {
@@ -294,12 +310,13 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             }
             const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
             if (child1.stderr.toString()) {
-                console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
+                console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString().trimEnd()));
                 continue;
             }
             const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
             if (child2.stderr.toString()) {
-                console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
+                console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString().trimEnd()));
+                console.error("\nTip: Try turning off the currently running .exe file and rerun run command");
                 continue;
             }
             console.log(chalk.greenBright("Build successfully, running...\n"));
@@ -326,12 +343,14 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
             const stderr = child.stderr ? child.stderr.toString() : "";
             process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
             if (child.error) {
-                if (/^spawnSync\s\w+\sENOENT$/.test(child.error.message)) {
+                if (child.error.message.includes("spawnSync") && child.error.message.includes("ENOENT")) {
                     const child_powershell = spawnSync(command, parsed_input.args, { stdio: "pipe", shell: "powershell.exe" });
-                    const stdout = child_powershell.stdout ? child_powershell.stdout.toString() : "";
-                    const stderr = child_powershell.stderr ? child_powershell.stderr.toString() : "";
+                    const stdout = child_powershell.stdout ? child_powershell.stdout.toString().trim() : "";
+                    const stderr = child_powershell.stderr ? child_powershell.stderr.toString().trim() : "";
+                    process.stdout.write("\n");
                     process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
-                    stderr != "" && console.error(chalk.red(`${command}: unrecognised command | Type h for help`));
+                    process.stdout.write("\n");
+                    stderr != "" && console.error("\n" + chalk.red(`${command}: unrecognised command | Type h for help`));
                 }
                 else {
                     console.error(chalk.red("Error:", child.error.message));

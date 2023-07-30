@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /*
     Core ts dev guide:
     a) run ts in watch mode using tsc -w or, npm run dev | Ctrl + C to exit mode
@@ -8,14 +10,36 @@
     d) run npm start
 */
 
+/* 
+	export PS1="" for MSYS2 and only display the username/host computer name and let console logs take care of App output: Leetcode Diary --> "./path"
+	inside a .bashrc this command will run automatically at startup and also manage app title at title bar with PS1
+*/
+
 import chalk from "chalk";
-import inquirer from "inquirer";
+// import inquirer from "inquirer";
 import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import sqlite3 from "sqlite3";
 import { PathLike, createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
+
+/*  
+	- My database is static class to prevent two or more instances of the class from changing data at the same time and reading while other function
+		is changing data --> To prevent data races
+	- It helps to directly access the database from multiple zones as the methods are global
+	- Syntactically more clear in purpose and functionality --> SQLite3_DB.method_name
+	- static methods are faster than non-static methods
+
+	- If you want another instance of the database simply make const db2 = await SQLite3_DB.connect("./db/test.db");
+		const db3 = await SQLite3_DB.connect("./db/test.db"); and subsequently call their respective destructors/db disconnector to stop the db
+		connection
+	- The design of the class is intentional to enable these functionalitites. You can create multiple instances of database without creating
+		unnecessary instances of this class. Classes are faster. Class gives a good wrapper around database methods and nested class to extend
+		the EventEmitter which gives better visual clarity on what the methods purpose and functionality are.
+	- Use two instances of database when one is writing and others are reading, but not reading what is being currently written upon
+
+*/
 
 class SQLite3_DB {
 	static connect(dbFilePath: string) {
@@ -164,15 +188,28 @@ class SQLite3_DB {
 			}); // Close connection to the database
 		});
 	}
+
+	static eventEmitter = class extends EventEmitter {
+		constructor() {
+			super();
+		}
+
+		insertRow(...args: any[]) {
+			console.log("function running | class working", args ? args : "");
+		}
+	};
 }
 
-console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App Title
-
-console.log(chalk.hex("#9C33FF")("h --> help"));
+const dfg = new SQLite3_DB.eventEmitter();
+dfg.insertRow("arg1", "arg2", 3);
 
 /* *** main() function below *** */
 
 (async function main() {
+	console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`); // Main App Title
+
+	console.log(chalk.hex("#9C33FF")("h --> help"));
+
 	f.getMemoryLog();
 	// console.log("File extension: ", "" === f.getFileExtension("_folder_name")); // returns true
 	console.log(`> pwd is ${f.currentDir()}`);
@@ -339,17 +376,19 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 		if (!command) {
 			console.error(chalk.red("No command entered | Type h to view the list of all in-app commands"));
 			continue;
-		}
-
-		if (command === "fire") {
-			listener.emit("db event", "arg1", "arg10");
+		} else if (command === "fire") {
+			const default_args = ["default1", "default2"];
+			listener.emit("db event", ...(parsed_input.args.length > 0 ? parsed_input.args : default_args));
+			continue;
+		} else if (command === "exit" || command === "q") {
+			listener.removeAllListeners("db event"); // also need to run background processes to ensure cleanup when user abruptly closes the app
+			break;
+		} else if (command === "pwd") {
+			console.log(chalk.cyanBright(process.cwd()));
 			continue;
 		}
 
-		if (command === "exit" || command === "q") {
-			listener.removeAllListeners("db event"); // also need to run background processes to ensure cleanup when user abruptly closes the app
-			break;
-		}
+		/* ------------------------------------------------------------------------------------------------------------------------------------- */
 
 		if (command === "h") {
 			if (parsed_input.args.length != 0) {
@@ -449,13 +488,14 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 
 			const child1 = spawnSync("g++", ["-o", `${file.name}.o`, "-c", `${file.name}.cpp`]);
 			if (child1.stderr.toString()) {
-				console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString()));
+				console.error(chalk.red("Compilation Error -->\n\n" + child1.stderr.toString().trimEnd()));
 				continue;
 			}
 
 			const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
 			if (child2.stderr.toString()) {
-				console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString()));
+				console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString().trimEnd()));
+				console.error("\nTip: Try turning off the currently running .exe file and rerun run command");
 				continue;
 			}
 
@@ -490,6 +530,12 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 		} else {
 			const child = spawnSync(command, parsed_input.args, { stdio: "pipe" }); // by default runs on cmd.exe
 
+			/* if (process.env.TERM) {
+				console.log(`\nCurrent terminal: ${process.env.TERM}\n`); // in git bash spawnSync uses "xterm" terminal | env.TERM does not exists in windows
+			} else {
+				console.log("\nTerminal information not available.\n");
+			} */
+
 			// Convert Buffer objects to strings for stdout and stderr
 			const stdout = child.stdout ? child.stdout.toString() : "";
 			const stderr = child.stderr ? child.stderr.toString() : "";
@@ -497,17 +543,25 @@ console.log(chalk.hex("#9C33FF")("h --> help"));
 			process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
 
 			if (child.error) {
-				if (/^spawnSync\s\w+\sENOENT$/.test(child.error.message)) {
+				if (child.error.message.includes("spawnSync") && child.error.message.includes("ENOENT")) {
 					// above condition is checking for no entity (found) error of spawnSync method
 					const child_powershell = spawnSync(command, parsed_input.args, { stdio: "pipe", shell: "powershell.exe" });
 					// runs on powershell when cmd.exe fails to execute command --> stdio: inherit by default
 					// powershell not run by default cause each time shell: "powershell.exe" takes time to setup and execute, while cmd.exe is fast
 
+					/* if (process.env.TERM) {
+						console.log(`\nCurrent terminal: ${process.env.TERM}\n`);
+					} else {
+						console.log("\nTerminal information not available.\n");
+					} */
+
 					// Convert Buffer objects to strings for stdout and stderr
-					const stdout = child_powershell.stdout ? child_powershell.stdout.toString() : "";
-					const stderr = child_powershell.stderr ? child_powershell.stderr.toString() : "";
+					const stdout = child_powershell.stdout ? child_powershell.stdout.toString().trim() : "";
+					const stderr = child_powershell.stderr ? child_powershell.stderr.toString().trim() : "";
+					process.stdout.write("\n");
 					process.stdout.write(chalk.cyanBright(stdout) || chalk.red(stderr));
-					stderr != "" && console.error(chalk.red(`${command}: unrecognised command | Type h for help`));
+					process.stdout.write("\n");
+					stderr != "" && console.error("\n" + chalk.red(`${command}: unrecognised command | Type h for help`));
 				} else {
 					console.error(chalk.red("Error:", child.error.message));
 				}
