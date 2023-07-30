@@ -128,13 +128,30 @@ class SQLite3_DB {
         constructor() {
             super();
         }
-        insertRow(...args) {
-            console.log("function running | class working", args ? args : "");
+        insertRow(dbHandle, log) {
+            dbHandle.serialize(() => {
+                dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, SQLite3_DB.objectToArray(log), (err) => {
+                    err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+                });
+            });
         }
     };
+    static localTime() {
+        return new Date().toLocaleTimeString("en-US", { hour12: false });
+    }
+    static localDate() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        const date = now.getDate();
+        return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
+    }
+    static objectToArray(obj) {
+        return Object.keys(obj).map((key) => obj[key]);
+    }
 }
-const dfg = new SQLite3_DB.eventEmitter();
-dfg.insertRow("arg1", "arg2", 3);
+const df = new SQLite3_DB.eventEmitter();
 (async function main() {
     console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
     console.log(chalk.hex("#9C33FF")("h --> help"));
@@ -175,6 +192,40 @@ dfg.insertRow("arg1", "arg2", 3);
     console.log(currentDateTime);
     const listener = new EventEmitter();
     listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
+    const da = await SQLite3_DB.connect("./db/test.db");
+    if (da) {
+        await SQLite3_DB.createTable(da, `
+			CREATE TABLE IF NOT EXISTS commit_log (
+				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
+				username TEXT NOT NULL,
+				commit_time TIME NOT NULL,
+				commit_date DATE NOT NULL,
+				commit_no INTEGER NOT NULL,
+				line_no INTEGER NOT NULL,
+				line_string TEXT NOT NULL,
+				commit_msg TEXT DEFAULT NULL
+			)
+		`);
+        df.insertRow(da, {
+            username: "sahil",
+            commit_time: SQLite3_DB.localTime(),
+            commit_date: SQLite3_DB.localDate(),
+            commit_no: 1,
+            line_no: 2,
+            line_string: "Line 1",
+            commit_msg: null,
+        });
+        df.insertRow(da, {
+            username: "sahil",
+            commit_time: SQLite3_DB.localTime(),
+            commit_date: SQLite3_DB.localDate(),
+            commit_no: 1,
+            line_no: 2,
+            line_string: "Line 2",
+            commit_msg: null,
+        });
+        await SQLite3_DB.disconnect(da);
+    }
     const db = undefined;
     if (db) {
         await SQLite3_DB.createTable(db, `
@@ -195,14 +246,13 @@ dfg.insertRow("arg1", "arg2", 3);
 				line_string TEXT
 			)
 		`);
-        const commit_time = sqlLocalTime();
-        const commit_date = sqlLocalDate();
+        const commit_time = SQLite3_DB.localTime();
+        const commit_date = SQLite3_DB.localDate();
         const commitData = f.readJson("./db/commitData.json");
         commitData.commit_no += 1;
         f.writeJson("./db/commitData.json", commitData);
-        await SQLite3_DB.fromFileInsertEachRow(db, "../../canJump1 Leetcode - Copy.txt", "Sahil Dutta", commit_time, commit_date, commitData.commit_no, "My first commit");
+        await SQLite3_DB.fromFileInsertEachRow(db, "../../optimizedsumofprimes.cpp", "Sahil Dutta", commit_time, commit_date, commitData.commit_no, "My first commit");
         await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
-        await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
         await SQLite3_DB.disconnect(db);
     }
     while (true) {
@@ -404,16 +454,6 @@ function getLocalDateTime() {
         dd_mm_yyyy: `${date.toString().padStart(2, "0")}-${month.toString().padStart(2, "0")}-${year}`,
         dayOfWeek: daysOfWeek[now.getDay()],
     };
-}
-function sqlLocalTime() {
-    return new Date().toLocaleTimeString("en-US", { hour12: false });
-}
-function sqlLocalDate() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const date = now.getDate();
-    return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
 }
 async function listItemsInDirectory(directory_path) {
     try {

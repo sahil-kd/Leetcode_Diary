@@ -189,19 +189,68 @@ class SQLite3_DB {
 		});
 	}
 
+	/* Database event emitters below */
+
 	static eventEmitter = class extends EventEmitter {
 		constructor() {
 			super();
 		}
 
-		insertRow(...args: any[]) {
-			console.log("function running | class working", args ? args : "");
+		insertRow(dbHandle: sqlite3.Database, log: SQLite3_DB.userCommitLogEntry) {
+			dbHandle.serialize(() => {
+				dbHandle.run(
+					`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
+					SQLite3_DB.objectToArray(log),
+					(err) => {
+						err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+					}
+				);
+			});
 		}
 	};
+
+	/* Utils below */
+
+	static localTime() {
+		return new Date().toLocaleTimeString("en-US", { hour12: false });
+	}
+
+	static localDate() {
+		const now = new Date();
+		const year = now.getFullYear();
+		const month = now.getMonth() + 1;
+		const date = now.getDate();
+
+		return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
+	}
+
+	static objectToArray(obj: SQLite3_DB.userCommitLogEntry): Array<string | number | null> {
+		return Object.keys(obj).map((key) => obj[key]);
+	}
 }
 
-const dfg = new SQLite3_DB.eventEmitter();
-dfg.insertRow("arg1", "arg2", 3);
+namespace SQLite3_DB {
+	/* 
+		- Declare this interface by doing let u: SQLite3_DB.userCommitLogEntry = {}
+		- You'll get an error -> Quick fix (Ctrl + .)
+		- Select 'Add missing properties'
+	*/
+	export interface userCommitLogEntry {
+		username: string;
+		commit_time: string;
+		commit_date: string;
+		commit_no: number;
+		line_no: number;
+		line_string: string;
+		commit_msg: string | null;
+
+		// Index signature to allow access using a string key
+		[key: string]: number | string | null;
+	} // Type of row / entry into the table --> each attr is a column
+}
+
+const df = new SQLite3_DB.eventEmitter();
 
 /* *** main() function below *** */
 
@@ -270,19 +319,50 @@ dfg.insertRow("arg1", "arg2", 3);
 
 	/* Database entry point --> later move .db to %LOCALAPPDATA% & %APPDATA% --> No need to abstract as in if-else in else we can run code on success & is faster */
 
-	interface userCommitLogEntry {
-		sl_no: number;
-		username: string;
-		commit_time: string;
-		commit_date: string;
-		commit_no: number;
-		line_no: number;
-		line_string: string;
-		commit_msg: string | null;
-	} // Type of row / entry into the table --> each attr is a column
-
 	// const items = await listItemsInDirectory(`"${dirPath}"`); // <-- working
 	// items.forEach((item) => console.log(">> ", item));
+
+	const da = await SQLite3_DB.connect("./db/test.db");
+
+	if (da) {
+		await SQLite3_DB.createTable(
+			da,
+			`
+			CREATE TABLE IF NOT EXISTS commit_log (
+				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
+				username TEXT NOT NULL,
+				commit_time TIME NOT NULL,
+				commit_date DATE NOT NULL,
+				commit_no INTEGER NOT NULL,
+				line_no INTEGER NOT NULL,
+				line_string TEXT NOT NULL,
+				commit_msg TEXT DEFAULT NULL
+			)
+		`
+		);
+
+		df.insertRow(da, {
+			username: "sahil",
+			commit_time: SQLite3_DB.localTime(),
+			commit_date: SQLite3_DB.localDate(),
+			commit_no: 1,
+			line_no: 2,
+			line_string: "Line 1",
+			commit_msg: null,
+		});
+
+		df.insertRow(da, {
+			username: "sahil",
+			commit_time: SQLite3_DB.localTime(),
+			commit_date: SQLite3_DB.localDate(),
+			commit_no: 1,
+			line_no: 2,
+			line_string: "Line 2",
+			commit_msg: null,
+		});
+
+		await SQLite3_DB.disconnect(da);
+	}
 
 	// const db = await SQLite3_DB.connect("./db/test.db");
 	const db = undefined;
@@ -314,8 +394,8 @@ dfg.insertRow("arg1", "arg2", 3);
 		`
 		);
 
-		const commit_time = sqlLocalTime();
-		const commit_date = sqlLocalDate();
+		const commit_time = SQLite3_DB.localTime();
+		const commit_date = SQLite3_DB.localDate();
 
 		const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
 		commitData.commit_no += 1; // set the changes to staging
@@ -324,7 +404,7 @@ dfg.insertRow("arg1", "arg2", 3);
 
 		await SQLite3_DB.fromFileInsertEachRow(
 			db,
-			"../../canJump1 Leetcode - Copy.txt",
+			"../../optimizedsumofprimes.cpp",
 			"Sahil Dutta",
 			commit_time,
 			commit_date,
@@ -334,7 +414,7 @@ dfg.insertRow("arg1", "arg2", 3);
 
 		await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
 
-		await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
+		// await SQLite3_DB.deleteTable(db, "DROP TABLE commit_log");
 
 		await SQLite3_DB.disconnect(db);
 
@@ -633,19 +713,6 @@ function getLocalDateTime() {
 		dd_mm_yyyy: `${date.toString().padStart(2, "0")}-${month.toString().padStart(2, "0")}-${year}`,
 		dayOfWeek: daysOfWeek[now.getDay()],
 	};
-}
-
-function sqlLocalTime() {
-	return new Date().toLocaleTimeString("en-US", { hour12: false });
-}
-
-function sqlLocalDate() {
-	const now = new Date();
-	const year = now.getFullYear();
-	const month = now.getMonth() + 1;
-	const date = now.getDate();
-
-	return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
 }
 
 async function listItemsInDirectory(directory_path: string) {
