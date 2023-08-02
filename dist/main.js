@@ -6,6 +6,116 @@ import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
+class CREATE_TABLE_IF_NOT_EXIST {
+    inferrableShapeType = {};
+    constructor(dbHandle, tablename, shape) {
+        this.tablename = tablename;
+        this.dbHandle = dbHandle;
+        this.sqlQuery = `CREATE TABLE IF NOT EXISTS ${tablename} (\n`;
+        Object.keys(shape).map((key) => {
+            this.sqlQuery += `${key} ${shape[key]},\n`;
+        });
+        this.sqlQuery = this.removeTrailingCommas(this.sqlQuery);
+        this.sqlQuery += "\n)";
+        console.log("this.sqlQuery below:\n");
+        console.log(this.sqlQuery);
+        dbHandle?.serialize(() => {
+            dbHandle.run(this.sqlQuery, (err) => {
+                if (err) {
+                    console.error(chalk.red("AppError: Table-creation Error --> " + err.message));
+                }
+            });
+        });
+        Object.assign(this.inferrableShapeType, shape);
+        this.changePropertyValues(this.inferrableShapeType);
+    }
+    method() {
+        console.log(this.inferrableShapeType);
+    }
+    removeTrailingCommas(inputString) {
+        const cleanedString = inputString.replace(/[, \n]+$/, "");
+        return cleanedString;
+    }
+    changePropertyValues(obj) {
+        for (const [key, value] of Object.entries(obj)) {
+            switch (value) {
+                case "TEXT":
+                    obj[key] = this.assignType_string_or_null();
+                    break;
+                case "INTEGER":
+                    obj[key] = this.assignType_number_or_null();
+                    break;
+                case "TIME":
+                    obj[key] = this.assignType_string_or_null();
+                    break;
+                case "DATE":
+                    obj[key] = this.assignType_string_or_null();
+                    break;
+                case "TEXT NOT NULL":
+                    obj[key] = "";
+                    break;
+                case "INTEGER NOT NULL":
+                    obj[key] = 0;
+                    break;
+                case "TIME NOT NULL":
+                    obj[key] = "";
+                    break;
+                case "DATE NOT NULL":
+                    obj[key] = "";
+                    break;
+                case "TEXT DEFAULT NULL":
+                    obj[key] = this.assignType_string_or_null();
+                    obj[key] = null;
+                    break;
+                case "INTEGER DEFAULT NULL":
+                    obj[key] = this.assignType_number_or_null();
+                    obj[key] = null;
+                    break;
+                case "TIME DEFAULT NULL":
+                    obj[key] = this.assignType_string_or_null();
+                    obj[key] = null;
+                    break;
+                case "DATE DEFAULT NULL":
+                    obj[key] = this.assignType_string_or_null();
+                    obj[key] = null;
+                    break;
+                case "INTEGER PRIMARY KEY AUTOINCREMENT":
+                    obj[key] = 0;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    assignType_number_or_null() {
+        const value = Math.random() > 0.5 ? 10 | 11 : null;
+        return (function inferType(value) {
+            return value;
+        })(value);
+    }
+    assignType_boolean_or_null() {
+        const value = Math.random() > 0.5 ? true : null;
+        return (function inferType(value) {
+            return value;
+        })(value);
+    }
+    assignType_string_or_null() {
+        const value = Math.random() > 0.5 ? "" : null;
+        return (function inferType(value) {
+            return value;
+        })(value);
+    }
+}
+const nn = new CREATE_TABLE_IF_NOT_EXIST(undefined, "", {
+    username: "TEXT",
+    no: "INTEGER PRIMARY KEY AUTOINCREMENT",
+    pasword: "TEXT NOT NULL",
+    Additional_comment: "TEXT DEFAULT NULL",
+    count: "INTEGER",
+    Date: "DATE NOT NULL",
+    Time: "TEXT NOT NULL",
+});
+nn.method();
 class SQLite3_DB {
     static connect(dbFilePath) {
         return new Promise((resolve) => {
@@ -21,27 +131,19 @@ class SQLite3_DB {
         });
     }
     static createTable(dbHandle, sqlQuery) {
-        return new Promise((resolve) => {
+        dbHandle?.serialize(() => {
             dbHandle.run(sqlQuery, (err) => {
                 if (err) {
                     console.error(chalk.red("AppError: Table-creation Error --> " + err.message));
-                    resolve();
-                }
-                else {
-                    resolve();
                 }
             });
         });
     }
     static createTempTable(dbHandle, sqlQuery) {
-        return new Promise((resolve) => {
+        dbHandle?.serialize(() => {
             dbHandle.run(sqlQuery, (err) => {
                 if (err) {
                     console.error(chalk.red("AppError: Temp-table creation error --> " + err.message));
-                    resolve();
-                }
-                else {
-                    resolve();
                 }
             });
         });
@@ -99,42 +201,34 @@ class SQLite3_DB {
         });
     }
     static deleteTable(dbHandle, sqlQuery) {
-        return new Promise((resolve) => {
+        dbHandle?.serialize(() => {
             dbHandle.run(sqlQuery, (err) => {
                 if (err) {
                     console.error(chalk.red("AppError: Table deletion error --> " + err.message));
-                    resolve();
-                }
-                else {
-                    resolve();
                 }
             });
         });
     }
     static disconnect(dbHandle) {
-        return new Promise((resolve) => {
+        dbHandle?.serialize(() => {
             dbHandle.close((err) => {
                 if (err) {
                     console.error(chalk.red("AppError: db disconnection error --> " + err.message));
-                    resolve();
                 }
-                else {
-                    resolve();
-                }
+            });
+        });
+    }
+    static insertRow(dbHandle, log) {
+        dbHandle?.serialize(() => {
+            dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, SQLite3_DB.objectToArray(log), (err) => {
+                err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
             });
         });
     }
     static eventEmitter = class extends EventEmitter {
         constructor() {
             super();
-        }
-        insertRow(dbHandle, log) {
-            dbHandle.serialize(() => {
-                dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, SQLite3_DB.objectToArray(log), (err) => {
-                    err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
-                });
-            });
         }
     };
     static localTime() {
@@ -151,7 +245,6 @@ class SQLite3_DB {
         return Object.keys(obj).map((key) => obj[key]);
     }
 }
-const df = new SQLite3_DB.eventEmitter();
 (async function main() {
     console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
     console.log(chalk.hex("#9C33FF")("h --> help"));
@@ -190,11 +283,10 @@ const df = new SQLite3_DB.eventEmitter();
     f.createDir(f.joinPath(tmpdirPath, "leetcodeislife", "Current session storage", "log"));
     const currentDateTime = getLocalDateTime();
     console.log(currentDateTime);
-    const listener = new EventEmitter();
+    const listener = new SQLite3_DB.eventEmitter();
     listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
-    const da = await SQLite3_DB.connect("./db/test.db");
-    if (da) {
-        await SQLite3_DB.createTable(da, `
+    const da = undefined;
+    SQLite3_DB.createTable(da, `
 			CREATE TABLE IF NOT EXISTS commit_log (
 				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
 				username TEXT NOT NULL,
@@ -206,29 +298,37 @@ const df = new SQLite3_DB.eventEmitter();
 				commit_msg TEXT DEFAULT NULL
 			)
 		`);
-        df.insertRow(da, {
-            username: "sahil",
-            commit_time: SQLite3_DB.localTime(),
-            commit_date: SQLite3_DB.localDate(),
-            commit_no: 1,
-            line_no: 2,
-            line_string: "Line 1",
-            commit_msg: null,
-        });
-        df.insertRow(da, {
-            username: "sahil",
-            commit_time: SQLite3_DB.localTime(),
-            commit_date: SQLite3_DB.localDate(),
-            commit_no: 1,
-            line_no: 2,
-            line_string: "Line 2",
-            commit_msg: null,
-        });
-        await SQLite3_DB.disconnect(da);
-    }
+    SQLite3_DB.insertRow(da, {
+        username: "sahil",
+        commit_time: SQLite3_DB.localTime(),
+        commit_date: SQLite3_DB.localDate(),
+        commit_no: 1,
+        line_no: 2,
+        line_string: "Line 1",
+        commit_msg: null,
+    });
+    SQLite3_DB.insertRow(da, {
+        username: "sahil",
+        commit_time: SQLite3_DB.localTime(),
+        commit_date: SQLite3_DB.localDate(),
+        commit_no: 1,
+        line_no: 2,
+        line_string: "Line 2",
+        commit_msg: null,
+    });
+    SQLite3_DB.insertRow(da, {
+        username: "sahil",
+        commit_time: SQLite3_DB.localTime(),
+        commit_date: SQLite3_DB.localDate(),
+        commit_no: 1,
+        line_no: 2,
+        line_string: "Line 3",
+        commit_msg: "First commit msg",
+    });
+    SQLite3_DB.disconnect(da);
     const db = undefined;
     if (db) {
-        await SQLite3_DB.createTable(db, `
+        SQLite3_DB.createTable(db, `
 			CREATE TABLE IF NOT EXISTS commit_log (
 				sl_no INTEGER PRIMARY KEY AUTOINCREMENT,
 				username TEXT NOT NULL,
@@ -240,7 +340,7 @@ const df = new SQLite3_DB.eventEmitter();
 				commit_msg TEXT DEFAULT NULL
 			)
 		`);
-        await SQLite3_DB.createTempTable(db, `
+        SQLite3_DB.createTempTable(db, `
 			CREATE TEMPORARY TABLE temp_file(
 				line_no INTEGER,
 				line_string TEXT
@@ -253,7 +353,7 @@ const df = new SQLite3_DB.eventEmitter();
         f.writeJson("./db/commitData.json", commitData);
         await SQLite3_DB.fromFileInsertEachRow(db, "../../optimizedsumofprimes.cpp", "Sahil Dutta", commit_time, commit_date, commitData.commit_no, "My first commit");
         await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
-        await SQLite3_DB.disconnect(db);
+        SQLite3_DB.disconnect(db);
     }
     while (true) {
         process.stdout.write("\n");
@@ -366,7 +466,7 @@ const df = new SQLite3_DB.eventEmitter();
             const child2 = spawnSync("g++", ["-o", `${file.name}.exe`, `${file.name}.o`]);
             if (child2.stderr.toString()) {
                 console.error(chalk.red("Linking Error -->\n\n" + child2.stderr.toString().trimEnd()));
-                console.error("\nTip: Try turning off the currently running .exe file and rerun run command");
+                console.error(chalk.redBright("\nTip: Try turning off the currently running .exe file and rerun run command"));
                 continue;
             }
             console.log(chalk.greenBright("Build successfully, running...\n"));
