@@ -29,9 +29,20 @@ class CREATE_TABLE_IF_NOT_EXIST {
     method(o) {
         console.log(o);
     }
+    insertRow(log) {
+        this.dbHandle?.serialize(() => {
+            this.dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, this.objectToArray(log), (err) => {
+                err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+            });
+        });
+    }
     removeTrailingCommas(inputString) {
         const cleanedString = inputString.replace(/[, \n]+$/, "");
         return cleanedString;
+    }
+    objectToArray(obj) {
+        return Object.keys(obj).map((key) => obj[key]);
     }
 }
 const nn = new CREATE_TABLE_IF_NOT_EXIST(undefined, "", {

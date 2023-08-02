@@ -43,20 +43,6 @@ import { EventEmitter } from "node:events";
 		line_string TEXT
 	)
 `
-
-	case "TEXT":
-	case "INTEGER":
-	case "TIME":
-	case "DATE":
-	case "TEXT NOT NULL":
-	case "INTEGER NOT NULL":
-	case "TIME NOT NULL":
-	case "DATE NOT NULL":
-	case "TEXT DEFAULT NULL":
-	case "INTEGER DEFAULT NULL":
-	case "TIME DEFAULT NULL":
-	case "DATE DEFAULT NULL":
-	case "INTEGER PRIMARY KEY AUTOINCREMENT":
 */
 
 type convertSQLTypes<T> = {
@@ -141,11 +127,21 @@ class CREATE_TABLE_IF_NOT_EXIST<
 		});
 	}
 
-	// method<T extends typeof this.inferrableShapeType>(o: T) {
-	// 	console.log(o);
-	// }
 	method(o: convertSQLTypes<TableShape>) {
 		console.log(o);
+	}
+
+	insertRow(log: convertSQLTypes<TableShape>) {
+		(this.dbHandle as sqlite3.Database)?.serialize(() => {
+			(this.dbHandle as sqlite3.Database).run(
+				`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
+				this.objectToArray(log),
+				(err) => {
+					err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+				}
+			);
+		});
 	}
 
 	/* Utils below */
@@ -153,6 +149,10 @@ class CREATE_TABLE_IF_NOT_EXIST<
 	private removeTrailingCommas(inputString: string) {
 		const cleanedString = inputString.replace(/[, \n]+$/, "");
 		return cleanedString;
+	}
+
+	private objectToArray(obj: convertSQLTypes<TableShape>): Array<string | number | null> {
+		return Object.keys(obj).map((key) => obj[key]);
 	}
 }
 
