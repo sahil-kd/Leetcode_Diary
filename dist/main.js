@@ -7,7 +7,6 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 class CREATE_TABLE_IF_NOT_EXIST {
-    inferrableShapeType = {};
     constructor(dbHandle, tablename, shape) {
         this.tablename = tablename;
         this.dbHandle = dbHandle;
@@ -26,96 +25,33 @@ class CREATE_TABLE_IF_NOT_EXIST {
                 }
             });
         });
-        Object.assign(this.inferrableShapeType, shape);
-        this.changePropertyValues(this.inferrableShapeType);
     }
-    method() {
-        console.log(this.inferrableShapeType);
+    method(o) {
+        console.log(o);
     }
     removeTrailingCommas(inputString) {
         const cleanedString = inputString.replace(/[, \n]+$/, "");
         return cleanedString;
     }
-    changePropertyValues(obj) {
-        for (const [key, value] of Object.entries(obj)) {
-            switch (value) {
-                case "TEXT":
-                    obj[key] = this.assignType_string_or_null();
-                    break;
-                case "INTEGER":
-                    obj[key] = this.assignType_number_or_null();
-                    break;
-                case "TIME":
-                    obj[key] = this.assignType_string_or_null();
-                    break;
-                case "DATE":
-                    obj[key] = this.assignType_string_or_null();
-                    break;
-                case "TEXT NOT NULL":
-                    obj[key] = "";
-                    break;
-                case "INTEGER NOT NULL":
-                    obj[key] = 0;
-                    break;
-                case "TIME NOT NULL":
-                    obj[key] = "";
-                    break;
-                case "DATE NOT NULL":
-                    obj[key] = "";
-                    break;
-                case "TEXT DEFAULT NULL":
-                    obj[key] = this.assignType_string_or_null();
-                    obj[key] = null;
-                    break;
-                case "INTEGER DEFAULT NULL":
-                    obj[key] = this.assignType_number_or_null();
-                    obj[key] = null;
-                    break;
-                case "TIME DEFAULT NULL":
-                    obj[key] = this.assignType_string_or_null();
-                    obj[key] = null;
-                    break;
-                case "DATE DEFAULT NULL":
-                    obj[key] = this.assignType_string_or_null();
-                    obj[key] = null;
-                    break;
-                case "INTEGER PRIMARY KEY AUTOINCREMENT":
-                    obj[key] = 0;
-                    break;
-                default:
-                    break;
-            }
-        }
-    }
-    assignType_number_or_null() {
-        const value = Math.random() > 0.5 ? 10 | 11 : null;
-        return (function inferType(value) {
-            return value;
-        })(value);
-    }
-    assignType_boolean_or_null() {
-        const value = Math.random() > 0.5 ? true : null;
-        return (function inferType(value) {
-            return value;
-        })(value);
-    }
-    assignType_string_or_null() {
-        const value = Math.random() > 0.5 ? "" : null;
-        return (function inferType(value) {
-            return value;
-        })(value);
-    }
 }
 const nn = new CREATE_TABLE_IF_NOT_EXIST(undefined, "", {
     username: "TEXT",
     no: "INTEGER PRIMARY KEY AUTOINCREMENT",
-    pasword: "TEXT NOT NULL",
+    password: "TEXT NOT NULL",
     Additional_comment: "TEXT DEFAULT NULL",
     count: "INTEGER",
     Date: "DATE NOT NULL",
     Time: "TEXT NOT NULL",
 });
-nn.method();
+nn.method({
+    username: null,
+    no: 0,
+    password: "",
+    Additional_comment: null,
+    count: null,
+    Date: "",
+    Time: "",
+});
 class SQLite3_DB {
     static connect(dbFilePath) {
         return new Promise((resolve) => {

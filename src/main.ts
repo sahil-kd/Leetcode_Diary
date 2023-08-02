@@ -43,7 +43,53 @@ import { EventEmitter } from "node:events";
 		line_string TEXT
 	)
 `
+
+	case "TEXT":
+	case "INTEGER":
+	case "TIME":
+	case "DATE":
+	case "TEXT NOT NULL":
+	case "INTEGER NOT NULL":
+	case "TIME NOT NULL":
+	case "DATE NOT NULL":
+	case "TEXT DEFAULT NULL":
+	case "INTEGER DEFAULT NULL":
+	case "TIME DEFAULT NULL":
+	case "DATE DEFAULT NULL":
+	case "INTEGER PRIMARY KEY AUTOINCREMENT":
 */
+
+type convertSQLTypes<T> = {
+	[K in keyof T]: T[K] extends "TEXT"
+		? string | null
+		: T[K] extends "INTEGER"
+		? number | null
+		: T[K] extends "INTEGER"
+		? number | null
+		: T[K] extends "TIME"
+		? string | null
+		: T[K] extends "DATE"
+		? string | null
+		: T[K] extends "TEXT NOT NULL"
+		? string
+		: T[K] extends "INTEGER NOT NULL"
+		? number
+		: T[K] extends "TIME NOT NULL"
+		? string
+		: T[K] extends "DATE NOT NULL"
+		? string
+		: T[K] extends "TEXT DEFAULT NULL"
+		? string | null
+		: T[K] extends "INTEGER DEFAULT NULL"
+		? number | null
+		: T[K] extends "TIME DEFAULT NULL"
+		? string | null
+		: T[K] extends "DATE DEFAULT NULL"
+		? string | null
+		: T[K] extends "INTEGER PRIMARY KEY AUTOINCREMENT"
+		? number
+		: "Invalid SQLite types";
+}; // basically interating over the property types of interface T (this is a type function)
 
 class CREATE_TABLE_IF_NOT_EXIST<
 	TableShape extends {
@@ -71,8 +117,6 @@ class CREATE_TABLE_IF_NOT_EXIST<
 		| ((...args: any[]) => any | any[])
 		| { [x: string]: string | number | boolean | null };
 
-	private inferrableShapeType = {};
-
 	constructor(dbHandle: sqlite3.Database | undefined, tablename: string, shape: TableShape) {
 		this.tablename = tablename;
 		this.dbHandle = dbHandle;
@@ -95,18 +139,13 @@ class CREATE_TABLE_IF_NOT_EXIST<
 				}
 			}); // Creation of a table (mini-database)
 		});
-
-		Object.assign(this.inferrableShapeType, shape);
-		this.changePropertyValues(this.inferrableShapeType);
 	}
 
-	// private newvar: typeof this.inferrableShapeType = "";
-
-	method() {
-		// let newvar: typeof this.inferrableShapeType = {
-		// 	prop: 123
-		// };
-		console.log(this.inferrableShapeType);
+	// method<T extends typeof this.inferrableShapeType>(o: T) {
+	// 	console.log(o);
+	// }
+	method(o: convertSQLTypes<TableShape>) {
+		console.log(o);
 	}
 
 	/* Utils below */
@@ -115,100 +154,27 @@ class CREATE_TABLE_IF_NOT_EXIST<
 		const cleanedString = inputString.replace(/[, \n]+$/, "");
 		return cleanedString;
 	}
-
-	private changePropertyValues(obj: Record<string, string | number | boolean | null>) {
-		for (const [key, value] of Object.entries(obj)) {
-			switch (value) {
-				case "TEXT":
-					obj[key] = this.assignType_string_or_null();
-					break;
-				case "INTEGER":
-					obj[key] = this.assignType_number_or_null();
-					break;
-				case "TIME":
-					obj[key] = this.assignType_string_or_null();
-					break;
-				case "DATE":
-					obj[key] = this.assignType_string_or_null();
-					break;
-				case "TEXT NOT NULL":
-					obj[key] = "";
-					break;
-				case "INTEGER NOT NULL":
-					obj[key] = 0;
-					break;
-				case "TIME NOT NULL":
-					obj[key] = "";
-					break;
-				case "DATE NOT NULL":
-					obj[key] = "";
-					break;
-				case "TEXT DEFAULT NULL":
-					obj[key] = this.assignType_string_or_null();
-					obj[key] = null;
-					break;
-				case "INTEGER DEFAULT NULL":
-					obj[key] = this.assignType_number_or_null();
-					obj[key] = null;
-					break;
-				case "TIME DEFAULT NULL":
-					obj[key] = this.assignType_string_or_null();
-					obj[key] = null;
-					break;
-				case "DATE DEFAULT NULL":
-					obj[key] = this.assignType_string_or_null();
-					obj[key] = null;
-					break;
-				case "INTEGER PRIMARY KEY AUTOINCREMENT":
-					obj[key] = 0;
-					break;
-				default:
-					break;
-			}
-		}
-	}
-
-	/* Type assigner functions below */
-
-	private assignType_number_or_null() {
-		// Implement this function as, let v = assignType_number_or_null(); // TypeScript infers v as number | null
-		// then use the variable as you normally would, but this time it's type safe
-		const value = Math.random() > 0.5 ? 10 | 11 : null;
-		return (function inferType<T>(value: T): T {
-			return value;
-		})(value);
-	}
-
-	private assignType_boolean_or_null() {
-		// Implement this function as, let v = assignType_boolean_or_null(); // TypeScript infers v as boolean | null
-		// then use the variable as you normally would, but this time it's type safe
-		const value = Math.random() > 0.5 ? true : null;
-		return (function inferType<T>(value: T): T {
-			return value;
-		})(value);
-	}
-
-	private assignType_string_or_null() {
-		// Implement this function as, let v = assignType_string_or_null(); // TypeScript infers v as string | null
-		// then use the variable as you normally would, but this time it's type safe
-		const value = Math.random() > 0.5 ? "" : null;
-		return (function inferType<T>(value: T): T {
-			return value;
-		})(value);
-	}
 }
 
 const nn = new CREATE_TABLE_IF_NOT_EXIST(undefined, "", {
 	username: "TEXT",
 	no: "INTEGER PRIMARY KEY AUTOINCREMENT",
-	pasword: "TEXT NOT NULL",
+	password: "TEXT NOT NULL",
 	Additional_comment: "TEXT DEFAULT NULL",
 	count: "INTEGER",
 	Date: "DATE NOT NULL",
 	Time: "TEXT NOT NULL",
 });
 
-nn.method();
+nn.method({
+	username: null,
+	no: 0,
+	password: "",
+	Additional_comment: null,
+	count: null,
+	Date: "",
+	Time: "",
+});
 
 /*  
 	- My database is static class to prevent two or more instances of the class from changing data at the same time and reading while other function
