@@ -6,63 +6,175 @@ import sqlite3 from "sqlite3";
 import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
-class CREATE_TABLE_IF_NOT_EXIST {
-    constructor(dbHandle, tablename, shape) {
-        this.tablename = tablename;
-        this.dbHandle = dbHandle;
-        this.sqlQuery = `CREATE TABLE IF NOT EXISTS ${tablename} (\n`;
-        Object.keys(shape).map((key) => {
-            this.sqlQuery += `${key} ${shape[key]},\n`;
+class A {
+    dbHandler;
+    constructor(databaseFilePath = "./db/test.db") {
+        this.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
+            if (err) {
+                console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
+            }
         });
-        this.sqlQuery = this.removeTrailingCommas(this.sqlQuery);
-        this.sqlQuery += "\n)";
-        console.log("this.sqlQuery below:\n");
-        console.log(this.sqlQuery);
-        dbHandle?.serialize(() => {
-            dbHandle.run(this.sqlQuery, (err) => {
+        console.log("cc = ", this.dbHandler);
+    }
+    disconnect() {
+        this.dbHandler?.serialize(() => {
+            this.dbHandler.close((err) => {
                 if (err) {
-                    console.error(chalk.red("AppError: Table-creation Error --> " + err.message));
+                    console.error(chalk.red("AppError: db disconnection error --> " + err.message));
                 }
             });
         });
     }
-    method(o) {
-        console.log(o);
+    static localTime() {
+        return new Date().toLocaleTimeString("en-US", { hour12: false });
     }
-    insertRow(log) {
-        this.dbHandle?.serialize(() => {
-            this.dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, this.objectToArray(log), (err) => {
-                err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+    static localDate() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        const date = now.getDate();
+        return `${year}-${month.toString().padStart(2, "0")}-${date.toString().padStart(2, "0")}`;
+    }
+    static eventEmitter = class extends EventEmitter {
+        constructor() {
+            super();
+        }
+    };
+    CREATE_TABLE_IF_NOT_EXIST = class {
+        dbHandler;
+        tablename;
+        constructor(tablename, shape, dbHandler) {
+            this.tablename = tablename;
+            this.sqlQuery = `CREATE TABLE IF NOT EXISTS ${tablename} (\n`;
+            this.dbHandler = dbHandler;
+            Object.keys(shape).map((key) => {
+                this.sqlQuery += `${key} ${shape[key]},\n`;
             });
-        });
-    }
-    removeTrailingCommas(inputString) {
-        const cleanedString = inputString.replace(/[, \n]+$/, "");
-        return cleanedString;
-    }
-    objectToArray(obj) {
-        return Object.keys(obj).map((key) => obj[key]);
-    }
+            this.sqlQuery = this.removeTrailingCommas(this.sqlQuery);
+            this.sqlQuery += "\n)";
+            console.log("this.sqlQuery below:\n");
+            console.log(this.sqlQuery);
+            this.dbHandler?.serialize(() => {
+                this.dbHandler.run(this.sqlQuery, (err) => {
+                    if (err) {
+                        console.error(chalk.red("AppError: Table-creation Error --> " + err.message));
+                    }
+                });
+            });
+        }
+        method(o) {
+            console.log(o);
+            console.log("objectPropertyValuesToArray below: \n");
+            console.log(this.objectPropertyValuesToArray(o));
+            let q = "(";
+            Object.keys(o).map((key) => {
+                q += `${key}, `;
+            });
+            q = q.slice(0, -2);
+            q += ")";
+            console.log("q = " + q);
+        }
+        insertRow(log) {
+            let second_part = "VALUES (";
+            let sql_query = `INSERT INTO ${this.tablename} (`;
+            Object.keys(log).map((key) => {
+                sql_query += `${key}, `;
+                second_part += "?, ";
+            });
+            sql_query = sql_query.slice(0, -2);
+            second_part = second_part.slice(0, -2);
+            sql_query += ")\n";
+            second_part += ")";
+            sql_query += second_part;
+            console.log(sql_query);
+            this.dbHandler?.serialize(() => {
+                this.dbHandler.run(sql_query, this.objectPropertyValuesToArray(log), (err) => {
+                    err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+                });
+            });
+        }
+        selectAll() {
+            return new Promise((resolve) => {
+                let result;
+                this.dbHandler?.serialize(() => {
+                    this.dbHandler.all(`SELECT * FROM ${this.tablename}`, (err, rows) => {
+                        if (err) {
+                            console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+                            resolve(undefined);
+                        }
+                        else {
+                            rows.length == 0
+                                ? (result = null)
+                                : (result = rows);
+                            resolve(result);
+                        }
+                    });
+                });
+            });
+        }
+        select(...columns) {
+            return new Promise((resolve) => {
+                let result;
+                this.dbHandler?.serialize(() => {
+                    this.dbHandler.all(`SELECT ${columns.join(", ")} FROM ${this.tablename}`, (err, rows) => {
+                        if (err) {
+                            console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+                            resolve(undefined);
+                        }
+                        else {
+                            rows.length == 0
+                                ? (result = null)
+                                : (result = rows);
+                            resolve(result);
+                        }
+                    });
+                });
+            });
+        }
+        deleteTable() {
+            this.dbHandler?.serialize(() => {
+                this.dbHandler.run(`DROP TABLE ${this.tablename}`, (err) => {
+                    if (err) {
+                        console.error(chalk.red("AppError: Table deletion error --> " + err.message));
+                    }
+                });
+            });
+        }
+        removeTrailingCommas(inputString) {
+            const cleanedString = inputString.replace(/[, \n]+$/, "");
+            return cleanedString;
+        }
+        objectPropertyValuesToArray(obj) {
+            return Object.keys(obj).map((key) => obj[key]);
+        }
+    };
 }
-const nn = new CREATE_TABLE_IF_NOT_EXIST(undefined, "", {
-    username: "TEXT",
-    no: "INTEGER PRIMARY KEY AUTOINCREMENT",
-    password: "TEXT NOT NULL",
-    Additional_comment: "TEXT DEFAULT NULL",
-    count: "INTEGER",
-    Date: "DATE NOT NULL",
-    Time: "TEXT NOT NULL",
+const connection1 = new A();
+const table1 = new connection1.CREATE_TABLE_IF_NOT_EXIST("hello_world", {
+    sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
+    name: "TEXT NOT NULL",
+    age: "INTEGER NOT NULL",
+    dob: "DATE DEFAULT NULL",
+}, connection1.dbHandler);
+table1.insertRow({
+    name: "Sahil",
+    age: 23,
+    dob: null,
 });
-nn.method({
-    username: null,
-    no: 0,
-    password: "",
-    Additional_comment: null,
-    count: null,
-    Date: "",
-    Time: "",
+table1.insertRow({
+    name: "Sahil",
+    age: 23,
+    dob: null,
 });
+table1.insertRow({
+    name: "Kk",
+    age: 200,
+    dob: A.localDate(),
+});
+console.log(await table1.select("age", "dob", "dob", "name"));
+console.log(await table1.select("name", "age"));
+table1.deleteTable();
+connection1.disconnect();
 class SQLite3_DB {
     static connect(dbFilePath) {
         return new Promise((resolve) => {
@@ -165,14 +277,6 @@ class SQLite3_DB {
             });
         });
     }
-    static insertRow(dbHandle, log) {
-        dbHandle?.serialize(() => {
-            dbHandle.run(`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`, SQLite3_DB.objectToArray(log), (err) => {
-                err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
-            });
-        });
-    }
     static eventEmitter = class extends EventEmitter {
         constructor() {
             super();
@@ -245,33 +349,6 @@ class SQLite3_DB {
 				commit_msg TEXT DEFAULT NULL
 			)
 		`);
-    SQLite3_DB.insertRow(da, {
-        username: "sahil",
-        commit_time: SQLite3_DB.localTime(),
-        commit_date: SQLite3_DB.localDate(),
-        commit_no: 1,
-        line_no: 2,
-        line_string: "Line 1",
-        commit_msg: null,
-    });
-    SQLite3_DB.insertRow(da, {
-        username: "sahil",
-        commit_time: SQLite3_DB.localTime(),
-        commit_date: SQLite3_DB.localDate(),
-        commit_no: 1,
-        line_no: 2,
-        line_string: "Line 2",
-        commit_msg: null,
-    });
-    SQLite3_DB.insertRow(da, {
-        username: "sahil",
-        commit_time: SQLite3_DB.localTime(),
-        commit_date: SQLite3_DB.localDate(),
-        commit_no: 1,
-        line_no: 2,
-        line_string: "Line 3",
-        commit_msg: "First commit msg",
-    });
     SQLite3_DB.disconnect(da);
     const db = undefined;
     if (db) {
