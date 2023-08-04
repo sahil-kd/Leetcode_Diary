@@ -1,8 +1,8 @@
 import sqlite3 from "sqlite3";
 import chalk from "chalk";
 import { EventEmitter } from "node:events";
-// import { PathLike, createReadStream, createWriteStream } from "node:fs";
-// import { createInterface } from "node:readline";
+import { PathLike, createReadStream, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
 
 type ConvertSQLTypes<T> = {
 	[K in keyof T]: T[K] extends "TEXT"
@@ -39,17 +39,83 @@ type OmitPropertyByType<T, U> = {
 };
 
 class SQLite3_DB {
-	dbHandler: sqlite3.Database | undefined;
-	constructor(databaseFilePath: string = "./db/test.db") {
-		this.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
-			if (err) {
-				console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
-			}
+	private static allConnections: sqlite3.Database[] = []; // Private class attribute to store all active database connections
+
+	dbHandler: sqlite3.Database | undefined = undefined;
+
+	constructor() {} // connection working
+
+	static async connect(databaseFilePath: string) {
+		return new Promise<SQLite3_DB | undefined>((resolve) => {
+			const instance = new SQLite3_DB();
+			instance.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
+				if (err) {
+					console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
+					resolve(undefined);
+				} else {
+					SQLite3_DB.allConnections.push(instance.dbHandler as sqlite3.Database); // tracking all instances of SQLite3_DB
+					// instance of class SQLite3_DB stored inside class TABLE | 'this' here is an instance of SQLite3_DB
+					// but since this method is static we are creating an instance of SQLite3_DB cause we can't directly reference using 'this' keyword
+					instance.TABLE.instanceOfSQLite3_DB = instance;
+					resolve(instance);
+				}
+			});
 		});
-		console.log("cc = ", this.dbHandler);
-	} // connection working
+	}
+
+	/* Exit handler function below --> automatic database disconnectors --> I don't think they are working right now */
+
+	setupExitHandler() {
+		// listener for normal exit event
+		process.on("exit", () => {
+			this.closeAllConnections();
+		});
+
+		// Attach a listener for the 'SIGINT' event (Ctrl+C) also emitted when X button pressed or user puts pc to sleep
+		process.on("SIGINT", () => {
+			this.closeAllConnections();
+			process.exit(1);
+		});
+
+		// a listener for the 'uncaughtException' event
+		process.on("uncaughtException", (err) => {
+			console.error("Uncaught Exception:", err);
+			this.closeAllConnections();
+			process.exit(1); // Exit with an error code after cleanup
+		});
+	}
+
+	closeAllConnections() {
+		for (const db of SQLite3_DB.allConnections) {
+			db.serialize(() => {
+				db.close((err) => {
+					if (err) {
+						console.error("Error closing database:", err.message);
+					} else {
+						console.log("Database connection closed successfully.");
+					}
+				});
+			});
+		}
+	}
 
 	/* Core functions below */
+
+	/*
+    	connect() {
+            return new Promise<sqlite3.Database | undefined>((resolve) => {
+                this.dbHandler = new sqlite3.Database(this.databaseFilePath, (err) => {
+                    if (err) {
+                        console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
+                        resolve(undefined);
+                    } else {
+                        SQLite3_DB.allConnections.push(this.dbHandler as sqlite3.Database);
+                        resolve(this.dbHandler);
+                    }
+                });
+            });
+	    }
+    */
 
 	disconnect() {
 		(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
@@ -136,7 +202,7 @@ class SQLite3_DB {
 			connection1.disconnect();
 	*/
 
-	CREATE_TABLE_IF_NOT_EXIST = class<
+	TABLE = class TABLE<
 		TableShape extends {
 			[key: string]:
 				| "TEXT"
@@ -165,10 +231,23 @@ class SQLite3_DB {
 		dbHandler: sqlite3.Database | undefined;
 		tablename: string;
 
-		constructor(tablename: string, shape: TableShape, dbHandler: sqlite3.Database | undefined) {
+		/*
+			The static property below stores an instance of SQLite3_DB, each instance of SQLite3_DB can make many instances of
+			class TABLE and TABLE needs the single instance of SQLite3_DB to get access to the one dbHandler of one instance
+			as each instance of SQLite3_DB is given one dbHandler variable
+		*/
+
+		static instanceOfSQLite3_DB: SQLite3_DB | null = null; // Static property to store the instance of class SQLite3_DB
+
+		constructor(
+			tablename: string,
+			shape: TableShape,
+			dbHandler: sqlite3.Database | undefined,
+			typeofTable: "CREATE TABLE IF NOT EXISTS" | "CREATE TEMPORARY TABLE"
+		) {
 			this.tablename = tablename;
-			this.sqlQuery = `CREATE TABLE IF NOT EXISTS ${tablename} (\n`;
 			this.dbHandler = dbHandler;
+			this.sqlQuery = `${typeofTable} ${tablename} (\n`;
 
 			Object.keys(shape).map((key) => {
 				this.sqlQuery += `${key} ${shape[key]},\n`;
@@ -176,9 +255,6 @@ class SQLite3_DB {
 
 			this.sqlQuery = this.removeTrailingCommas(this.sqlQuery);
 			this.sqlQuery += "\n)";
-
-			console.log("this.sqlQuery below:\n");
-			console.log(this.sqlQuery);
 
 			(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
 				(this.dbHandler as sqlite3.Database).run(this.sqlQuery as string, (err) => {
@@ -188,6 +264,54 @@ class SQLite3_DB {
 				}); // Creation of a table (mini-database)
 			});
 		}
+
+		/* Table build functions below -->
+            To build do const connection = new
+        */
+
+		public static async CREATE_TABLE_IF_NOT_EXISTS<
+			T extends {
+				[key: string]:
+					| "TEXT"
+					| "INTEGER"
+					| "TIME"
+					| "DATE"
+					| "TEXT NOT NULL"
+					| "INTEGER NOT NULL"
+					| "TIME NOT NULL"
+					| "DATE NOT NULL"
+					| "TEXT DEFAULT NULL"
+					| "INTEGER DEFAULT NULL"
+					| "TIME DEFAULT NULL"
+					| "DATE DEFAULT NULL"
+					| "INTEGER PRIMARY KEY AUTOINCREMENT";
+			}
+		>(tablename: string, shape: T) {
+			return new this(tablename, shape, TABLE.instanceOfSQLite3_DB?.dbHandler, "CREATE TABLE IF NOT EXISTS");
+		} // cannot return promise explicitly else I lose 'this' reference to the instance of class TABLE | trapped in its own complexity
+
+		public static async CREATE_TEMPORARY_TABLE<
+			T extends {
+				[key: string]:
+					| "TEXT"
+					| "INTEGER"
+					| "TIME"
+					| "DATE"
+					| "TEXT NOT NULL"
+					| "INTEGER NOT NULL"
+					| "TIME NOT NULL"
+					| "DATE NOT NULL"
+					| "TEXT DEFAULT NULL"
+					| "INTEGER DEFAULT NULL"
+					| "TIME DEFAULT NULL"
+					| "DATE DEFAULT NULL"
+					| "INTEGER PRIMARY KEY AUTOINCREMENT";
+			}
+		>(tablename: string, shape: T) {
+			return new this(tablename, shape, TABLE.instanceOfSQLite3_DB?.dbHandler, "CREATE TEMPORARY TABLE");
+		}
+
+		/* ------------------------------------------------------------------------------------------- */
 
 		method(o: ConvertSQLTypes<TableShape>) {
 			console.log(o);
@@ -231,7 +355,6 @@ class SQLite3_DB {
 			second_part += ")";
 
 			sql_query += second_part;
-			console.log(sql_query);
 
 			(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
 				(this.dbHandler as sqlite3.Database).run(
@@ -252,7 +375,7 @@ class SQLite3_DB {
 						`SELECT * FROM ${this.tablename}`,
 						(err, rows: ConvertSQLTypes<TableShape>[]) => {
 							if (err) {
-								console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+								console.error(chalk.red("AppError: Table output error --> --> " + err.message));
 								resolve(undefined); // including this resolve is necessary else terminates the whole program
 							} else {
 								rows.length == 0
@@ -301,6 +424,36 @@ class SQLite3_DB {
 						console.error(chalk.red("AppError: Table deletion error --> " + err.message));
 					}
 				}); // delete the table named users
+			});
+		}
+
+		/* Database to file and file to database operations */
+
+		/* 
+        let line_no = 0;
+        fn_forEach_row = (line_string) => {
+                line_no += 1;
+                this.insertRow({...})
+            }
+        */
+
+		fromFileInsertEachRow(inputFile: PathLike, fn_forEach_row: (line_string_from_file: string) => void) {
+			return new Promise<void>((resolve) => {
+				const lineReader = createInterface({
+					input: createReadStream(inputFile, "utf8"),
+					crlfDelay: Infinity, // To handle both Unix and Windows line endings
+				});
+
+				lineReader.on("line", fn_forEach_row);
+
+				lineReader.on("close", () => {
+					resolve();
+				});
+
+				lineReader.on("error", (err) => {
+					console.error(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
+					resolve();
+				});
 			});
 		}
 

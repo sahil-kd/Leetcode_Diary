@@ -3,32 +3,6 @@ import chalk from "chalk";
 import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import { SQLite3_DB } from "./modules/SQLite3_DB.js";
-const connection1 = new SQLite3_DB();
-const table1 = new connection1.CREATE_TABLE_IF_NOT_EXIST("hello_world", {
-    sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
-    name: "TEXT NOT NULL",
-    age: "INTEGER NOT NULL",
-    dob: "DATE DEFAULT NULL",
-}, connection1.dbHandler);
-table1.insertRow({
-    name: "Sahil",
-    age: 23,
-    dob: null,
-});
-table1.insertRow({
-    name: "Sahil",
-    age: 23,
-    dob: null,
-});
-table1.insertRow({
-    name: "Kk",
-    age: 200,
-    dob: SQLite3_DB.localDate(),
-});
-console.log(await table1.select("age", "dob", "dob", "name"));
-console.log(await table1.select("name", "age"));
-table1.deleteTable();
-connection1.disconnect();
 (async function main() {
     console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
     console.log(chalk.hex("#9C33FF")("h --> help"));
@@ -69,6 +43,35 @@ connection1.disconnect();
     console.log(currentDateTime);
     const listener = new SQLite3_DB.eventEmitter();
     listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
+    const connection1 = await SQLite3_DB.connect("./db/test.db");
+    if (connection1) {
+        const table1 = await connection1.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
+            sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
+            username: "TEXT NOT NULL",
+            commit_time: "TIME NOT NULL",
+            commit_date: "DATE NOT NULL",
+            commit_no: "INTEGER NOT NULL",
+            line_no: "INTEGER NOT NULL",
+            line_string: "TEXT NOT NULL",
+            commit_msg: "TEXT DEFAULT NULL",
+        });
+        let line_number = 0;
+        await table1.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+            line_number += 1;
+            table1.insertRow({
+                username: "Sahil",
+                commit_time: SQLite3_DB.localTime(),
+                commit_date: SQLite3_DB.localDate(),
+                commit_no: 1,
+                line_no: line_number,
+                line_string: line,
+                commit_msg: null,
+            });
+        });
+        console.log(await table1.select("line_no", "line_string"));
+        table1.deleteTable();
+        connection1.disconnect();
+    }
     if (undefined) {
         const commitData = f.readJson("./db/commitData.json");
         commitData.commit_no += 1;
@@ -372,4 +375,14 @@ function parse_command(str) {
         command: command,
         args: arr,
     };
+}
+async function simulate_awaited_promise(time_milliseconds) {
+    await (() => {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                console.log(chalk.green(`\n${time_milliseconds} milliseconds period over\n`));
+                resolve();
+            }, 2000);
+        });
+    })();
 }

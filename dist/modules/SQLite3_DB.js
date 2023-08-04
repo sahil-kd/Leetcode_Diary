@@ -1,15 +1,55 @@
 import sqlite3 from "sqlite3";
 import chalk from "chalk";
 import { EventEmitter } from "node:events";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
 class SQLite3_DB {
-    dbHandler;
-    constructor(databaseFilePath = "./db/test.db") {
-        this.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
-            if (err) {
-                console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
-            }
+    static allConnections = [];
+    dbHandler = undefined;
+    constructor() { }
+    static async connect(databaseFilePath) {
+        return new Promise((resolve) => {
+            const instance = new SQLite3_DB();
+            instance.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
+                if (err) {
+                    console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
+                    resolve(undefined);
+                }
+                else {
+                    SQLite3_DB.allConnections.push(instance.dbHandler);
+                    instance.TABLE.instanceOfSQLite3_DB = instance;
+                    resolve(instance);
+                }
+            });
         });
-        console.log("cc = ", this.dbHandler);
+    }
+    setupExitHandler() {
+        process.on("exit", () => {
+            this.closeAllConnections();
+        });
+        process.on("SIGINT", () => {
+            this.closeAllConnections();
+            process.exit(1);
+        });
+        process.on("uncaughtException", (err) => {
+            console.error("Uncaught Exception:", err);
+            this.closeAllConnections();
+            process.exit(1);
+        });
+    }
+    closeAllConnections() {
+        for (const db of SQLite3_DB.allConnections) {
+            db.serialize(() => {
+                db.close((err) => {
+                    if (err) {
+                        console.error("Error closing database:", err.message);
+                    }
+                    else {
+                        console.log("Database connection closed successfully.");
+                    }
+                });
+            });
+        }
     }
     disconnect() {
         this.dbHandler?.serialize(() => {
@@ -35,20 +75,19 @@ class SQLite3_DB {
             super();
         }
     };
-    CREATE_TABLE_IF_NOT_EXIST = class {
+    TABLE = class TABLE {
         dbHandler;
         tablename;
-        constructor(tablename, shape, dbHandler) {
+        static instanceOfSQLite3_DB = null;
+        constructor(tablename, shape, dbHandler, typeofTable) {
             this.tablename = tablename;
-            this.sqlQuery = `CREATE TABLE IF NOT EXISTS ${tablename} (\n`;
             this.dbHandler = dbHandler;
+            this.sqlQuery = `${typeofTable} ${tablename} (\n`;
             Object.keys(shape).map((key) => {
                 this.sqlQuery += `${key} ${shape[key]},\n`;
             });
             this.sqlQuery = this.removeTrailingCommas(this.sqlQuery);
             this.sqlQuery += "\n)";
-            console.log("this.sqlQuery below:\n");
-            console.log(this.sqlQuery);
             this.dbHandler?.serialize(() => {
                 this.dbHandler.run(this.sqlQuery, (err) => {
                     if (err) {
@@ -56,6 +95,12 @@ class SQLite3_DB {
                     }
                 });
             });
+        }
+        static async CREATE_TABLE_IF_NOT_EXISTS(tablename, shape) {
+            return new this(tablename, shape, TABLE.instanceOfSQLite3_DB?.dbHandler, "CREATE TABLE IF NOT EXISTS");
+        }
+        static async CREATE_TEMPORARY_TABLE(tablename, shape) {
+            return new this(tablename, shape, TABLE.instanceOfSQLite3_DB?.dbHandler, "CREATE TEMPORARY TABLE");
         }
         method(o) {
             console.log(o);
@@ -81,7 +126,6 @@ class SQLite3_DB {
             sql_query += ")\n";
             second_part += ")";
             sql_query += second_part;
-            console.log(sql_query);
             this.dbHandler?.serialize(() => {
                 this.dbHandler.run(sql_query, this.objectPropertyValuesToArray(log), (err) => {
                     err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
@@ -94,7 +138,7 @@ class SQLite3_DB {
                 this.dbHandler?.serialize(() => {
                     this.dbHandler.all(`SELECT * FROM ${this.tablename}`, (err, rows) => {
                         if (err) {
-                            console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+                            console.error(chalk.red("AppError: Table output error --> --> " + err.message));
                             resolve(undefined);
                         }
                         else {
@@ -132,6 +176,22 @@ class SQLite3_DB {
                     if (err) {
                         console.error(chalk.red("AppError: Table deletion error --> " + err.message));
                     }
+                });
+            });
+        }
+        fromFileInsertEachRow(inputFile, fn_forEach_row) {
+            return new Promise((resolve) => {
+                const lineReader = createInterface({
+                    input: createReadStream(inputFile, "utf8"),
+                    crlfDelay: Infinity,
+                });
+                lineReader.on("line", fn_forEach_row);
+                lineReader.on("close", () => {
+                    resolve();
+                });
+                lineReader.on("error", (err) => {
+                    console.error(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
+                    resolve();
                 });
             });
         }
