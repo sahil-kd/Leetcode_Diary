@@ -96,41 +96,51 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 
 	// await simulate_awaited_promise(2000); // not placing await for async fn terminates the program | rest unreachable code
 
-	if (connection1) {
-		const table1 = await connection1.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
-			sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
-			username: "TEXT NOT NULL",
-			commit_time: "TIME NOT NULL",
-			commit_date: "DATE NOT NULL",
-			commit_no: "INTEGER NOT NULL",
-			line_no: "INTEGER NOT NULL",
-			line_string: "TEXT NOT NULL",
-			commit_msg: "TEXT DEFAULT NULL",
-		}); // it is awaiting
+	// if (connection1 && connection2) {
+	const table1 = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
+		sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
+		username: "TEXT NOT NULL",
+		commit_time: "TIME NOT NULL",
+		commit_date: "DATE NOT NULL",
+		commit_no: "INTEGER NOT NULL",
+		line_no: "INTEGER NOT NULL",
+		line_string: "TEXT NOT NULL",
+		commit_msg: "TEXT DEFAULT NULL",
+	}); // it is awaiting
 
-		let line_number = 0;
-		// Total insert ops takes about 2:30 minutes for 10,000 lines from the file --> benchmarked locally | but should take 10 secs in highly optimized apps
-		// 2:30 minutes for write operation but for reading from table barely 5 seconds
+	let line_number = 0;
+	// Total insert ops takes about 2:30 minutes for 10,000 lines from the file --> benchmarked locally | but should take 10 secs in highly optimized apps
+	// 2:30 minutes for write operation but for reading from table barely 5 seconds
 
-		await table1.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
-			line_number += 1;
-			table1.insertRow({
-				username: "Sahil",
-				commit_time: SQLite3_DB.localTime(),
-				commit_date: SQLite3_DB.localDate(),
-				commit_no: 1,
-				line_no: line_number,
-				line_string: line,
-				commit_msg: null,
-			});
+	// optimizedsumofprimes.cpp | long_file_10_000_lines.txt
+
+	await table1?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+		line_number += 1;
+		table1.insertRow({
+			username: "Sahil",
+			commit_time: SQLite3_DB.localTime(),
+			commit_date: SQLite3_DB.localDate(),
+			commit_no: 1,
+			line_no: line_number,
+			line_string: line,
+			commit_msg: null,
 		});
+	});
 
-		console.log(await table1.select("line_no", "line_string"));
+	await table1?.writeFromTableToFile(
+		"../../output.txt",
+		(row) => {
+			return `[${row.commit_time}] | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string}`;
+		},
+		["line_no", "line_string", "commit_time"]
+	);
 
-		table1.deleteTable();
+	console.log(await table1?.selectAll()); // do a forEach line by line output to a file | variable overflow check
+	// console.log(await table1.select("line_no", "line_string"));
 
-		connection1.disconnect();
-	}
+	table1?.deleteTable();
+
+	connection1?.disconnect();
 
 	if (undefined) {
 		/* Record data at external JSON */

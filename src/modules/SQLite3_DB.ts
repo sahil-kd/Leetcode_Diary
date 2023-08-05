@@ -4,6 +4,14 @@ import { EventEmitter } from "node:events";
 import { PathLike, createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 
+/*
+	Side Note:
+
+	I've noticed while testing my library that the popular sqlite3 module will create a new .db file if the address to the .db file is not
+	found, then it will create a new .db file inside the directory the path was pointing at provided the directory path is valid | even .db 
+	is valid filename
+*/
+
 type ConvertSQLTypes<T> = {
 	[K in keyof T]: T[K] extends "TEXT"
 		? string | null
@@ -38,19 +46,22 @@ type OmitPropertyByType<T, U> = {
 	[K in keyof T as T[K] extends U ? never : K]: T[K];
 };
 
+// (below) first is Default type else union type excluding Default type
+type UnionizeParams<T extends any[]> = T extends [infer Default, ...infer Params] ? Params[number] : T[0];
+
 class SQLite3_DB {
 	private static allConnections: sqlite3.Database[] = []; // Private class attribute to store all active database connections
 
 	dbHandler: sqlite3.Database | undefined = undefined;
 
-	constructor() {} // connection working
+	constructor() {}
 
 	static async connect(databaseFilePath: string) {
 		return new Promise<SQLite3_DB | undefined>((resolve) => {
 			const instance = new SQLite3_DB();
 			instance.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
 				if (err) {
-					console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
+					console.error(chalk.red("SQLite3_DB: Error connecting to the database --> ", err.message));
 					resolve(undefined);
 				} else {
 					SQLite3_DB.allConnections.push(instance.dbHandler as sqlite3.Database); // tracking all instances of SQLite3_DB
@@ -87,6 +98,11 @@ class SQLite3_DB {
 
 	closeAllConnections() {
 		for (const db of SQLite3_DB.allConnections) {
+			if (db === undefined) {
+				console.error(chalk.red("SQLite3_DB: Auto disconnector error --> Database not connected"));
+				continue;
+			}
+
 			db.serialize(() => {
 				db.close((err) => {
 					if (err) {
@@ -101,27 +117,11 @@ class SQLite3_DB {
 
 	/* Core functions below */
 
-	/*
-    	connect() {
-            return new Promise<sqlite3.Database | undefined>((resolve) => {
-                this.dbHandler = new sqlite3.Database(this.databaseFilePath, (err) => {
-                    if (err) {
-                        console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
-                        resolve(undefined);
-                    } else {
-                        SQLite3_DB.allConnections.push(this.dbHandler as sqlite3.Database);
-                        resolve(this.dbHandler);
-                    }
-                });
-            });
-	    }
-    */
-
 	disconnect() {
-		(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
+		(this.dbHandler as sqlite3.Database).serialize(() => {
 			(this.dbHandler as sqlite3.Database).close((err) => {
 				if (err) {
-					console.error(chalk.red("AppError: db disconnection error --> " + err.message));
+					console.error(chalk.red("SQLite3_DB: db disconnection error --> " + err.message));
 				}
 			}); // Close connection to the database
 		});
@@ -164,32 +164,33 @@ class SQLite3_DB {
 	*/
 
 	/*
+
+	[Important guide]:
 		- Objects are by javascript defintion set of unordered properties hence I cannot enforce order of properties through
 			typescript as the complexity is beyond the capabilities of the type system
 		- Objects are elegant to look at and more intuitive than maps, and they give the sweet autocomplete which reduces the
 			chances of errors, infact don't manually insert properties into functions like insertRow(), simply make:
 			
-			const connection1 = new A();
+			const connection1 = await SQLite3_DB.connect("path/to/database_file.db");
 
-			const table1 = new connection1.CREATE_TABLE_IF_NOT_EXIST(
+			const table2 = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS(
 				"hello_world",
 				{
 					sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
 					name: "TEXT NOT NULL",
 					age: "INTEGER NOT NULL",
 					dob: "DATE DEFAULT NULL",
-				},
-				connection1.dbHandler
+				}
 			);
 
-			table1.insertRow({});
+			table1?.insertRow({});
 			                 ^^ Error here --> move cursor here Ctrl + . then click 'Add missing properties'
 				    and it will autocomplete for you like this in the correct order
 					|
 					|
 					V
 
-			table1.insertRow({
+			table1?.insertRow({
 				name: "",
 				age: 0,
 				dob: null,
@@ -228,8 +229,8 @@ class SQLite3_DB {
 			| ((...args: any[]) => any | any[])
 			| { [x: string]: string | number | boolean | null };
 
-		dbHandler: sqlite3.Database | undefined;
-		tablename: string;
+		public dbHandler: sqlite3.Database | undefined; // raw database handler for when developer wants to use native sqlite3 mthods like run(), all(), etc
+		public tablename: string; // available if dev needs the name of the table --> helpful for debugging & logging in larger codebases
 
 		/*
 			The static property below stores an instance of SQLite3_DB, each instance of SQLite3_DB can make many instances of
@@ -256,10 +257,11 @@ class SQLite3_DB {
 			this.sqlQuery = this.removeTrailingCommas(this.sqlQuery);
 			this.sqlQuery += "\n)";
 
-			(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
+			this.dbHandler?.serialize(() => {
+				// important if-check to see if db connected | removing this check will lead to fatal error & program will abrupty exit
 				(this.dbHandler as sqlite3.Database).run(this.sqlQuery as string, (err) => {
 					if (err) {
-						console.error(chalk.red("AppError: Table-creation Error --> " + err.message));
+						console.error(chalk.red("SQLite3_DB: Table-creation Error --> " + err.message));
 					}
 				}); // Creation of a table (mini-database)
 			});
@@ -313,20 +315,6 @@ class SQLite3_DB {
 
 		/* ------------------------------------------------------------------------------------------- */
 
-		method(o: ConvertSQLTypes<TableShape>) {
-			console.log(o);
-			console.log("objectPropertyValuesToArray below: \n");
-			console.log(this.objectPropertyValuesToArray(o));
-			let q = "(";
-			Object.keys(o).map((key) => {
-				q += `${key}, `;
-			});
-			q = q.slice(0, -2);
-			q += ")";
-
-			console.log("q = " + q);
-		} // Dummy method for type testing
-
 		/*
 
 		Property INTEGER PRIMARY KEY AUTOINCREMENT is omitted in "insertRow" to disable manual manipulation of primary key
@@ -345,9 +333,17 @@ class SQLite3_DB {
 		insertRow(log: ConvertSQLTypes<OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>) {
 			let second_part = "VALUES (";
 			let sql_query = `INSERT INTO ${this.tablename} (`;
+			let second_part2 = ["VALUES ("];
+			let sql_query2 = [`INSERT INTO ${this.tablename} (`];
+
+			// Freezing the object for tiny performance gains
+			Object.freeze(log);
+
 			Object.keys(log).map((key) => {
 				sql_query += `${key}, `;
+				sql_query2.push(key);
 				second_part += "?, ";
+				second_part2.push("?");
 			});
 			sql_query = sql_query.slice(0, -2);
 			second_part = second_part.slice(0, -2);
@@ -356,12 +352,22 @@ class SQLite3_DB {
 
 			sql_query += second_part;
 
-			(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
+			sql_query2.push(")");
+			second_part2.push(")");
+
+			sql_query2.push(second_part2.join(", "));
+			console.log("--------------------------------------------------");
+			console.log(sql_query2.join(", "));
+
+			console.log("\n" + sql_query);
+			console.log("--------------------------------------------------");
+
+			(this.dbHandler as sqlite3.Database).serialize(() => {
 				(this.dbHandler as sqlite3.Database).run(
 					sql_query,
 					this.objectPropertyValuesToArray(log as ConvertSQLTypes<TableShape>),
 					(err) => {
-						err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+						err && console.error(chalk.red("SQLite3_DB [insertRow()]: row/entry insertion error --> " + err.message));
 					}
 				);
 			});
@@ -370,12 +376,12 @@ class SQLite3_DB {
 		selectAll() {
 			return new Promise<ConvertSQLTypes<TableShape>[] | null | undefined>((resolve) => {
 				let result;
-				(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
+				(this.dbHandler as sqlite3.Database).serialize(() => {
 					(this.dbHandler as sqlite3.Database).all(
 						`SELECT * FROM ${this.tablename}`,
-						(err, rows: ConvertSQLTypes<TableShape>[]) => {
+						(err, rows: Array<ConvertSQLTypes<TableShape>>) => {
 							if (err) {
-								console.error(chalk.red("AppError: Table output error --> --> " + err.message));
+								console.error(chalk.red("SQLite3_DB [selectAll()]: SELECT * error --> --> " + err.message));
 								resolve(undefined); // including this resolve is necessary else terminates the whole program
 							} else {
 								rows.length == 0
@@ -394,15 +400,15 @@ class SQLite3_DB {
 
 		/* Duplicate entries inside select will be removed at runtime by sqlite3 module to allow only single column names selection */
 
-		select(...columns: Array<keyof OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>) {
+		select(...columns: Array<keyof TableShape>) {
 			return new Promise<ConvertSQLTypes<TableShape>[] | null | undefined>((resolve) => {
 				let result;
-				(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
+				(this.dbHandler as sqlite3.Database).serialize(() => {
 					(this.dbHandler as sqlite3.Database).all(
 						`SELECT ${columns.join(", ")} FROM ${this.tablename}`,
 						(err, rows: ConvertSQLTypes<TableShape>[]) => {
 							if (err) {
-								console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+								console.log(chalk.red("SQLite3_DB [select()]: SELECT error --> " + err.message));
 								resolve(undefined); // it actually returns undefined on runtime failure irrespective of types
 							} else {
 								rows.length == 0
@@ -418,24 +424,16 @@ class SQLite3_DB {
 		} // db.all() is asynchronous so promise added --> DON'T use this function for very large tables else memory overflow
 
 		deleteTable() {
-			(this.dbHandler as sqlite3.Database | undefined)?.serialize(() => {
+			(this.dbHandler as sqlite3.Database).serialize(() => {
 				(this.dbHandler as sqlite3.Database).run(`DROP TABLE ${this.tablename}`, (err) => {
 					if (err) {
-						console.error(chalk.red("AppError: Table deletion error --> " + err.message));
+						console.error(chalk.red("SQLite3_DB: Table deletion error --> " + err.message));
 					}
 				}); // delete the table named users
 			});
 		}
 
 		/* Database to file and file to database operations */
-
-		/* 
-        let line_no = 0;
-        fn_forEach_row = (line_string) => {
-                line_no += 1;
-                this.insertRow({...})
-            }
-        */
 
 		fromFileInsertEachRow(inputFile: PathLike, fn_forEach_row: (line_string_from_file: string) => void) {
 			return new Promise<void>((resolve) => {
@@ -451,8 +449,62 @@ class SQLite3_DB {
 				});
 
 				lineReader.on("error", (err) => {
-					console.error(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
+					console.error(
+						chalk.red("SQLite3_DB [fromFileInsertEachRow()]: Error reading the inputFile: --> " + err.message)
+					);
 					resolve();
+				});
+			});
+		}
+
+		// Array<keyof OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>
+
+		writeFromTableToFile<T extends Array<keyof TableShape>>(
+			outputFile: PathLike,
+			forEach_rowObject: (
+				rowObject: Pick<ConvertSQLTypes<TableShape>, UnionizeParams<[ConvertSQLTypes<TableShape>, ...T]>>
+			) => string,
+			...selected_columns: T[]
+		) {
+			// return type is apparently void | PromiseLike<void>
+			return new Promise<void>((resolve) => {
+				const fileWriteStream = createWriteStream(outputFile);
+
+				// asserting type cause here dbHandler will be of type sqlite3.Database to avoid using unnecessary if checks like this this.dbHandler?.serialize(...)
+				// to improve performance when transpiled to javascript, cause these tiny things matters in large databases
+				(this.dbHandler as sqlite3.Database).serialize(() => {
+					(this.dbHandler as sqlite3.Database).each(
+						`SELECT ${selected_columns.length === 0 ? "*" : selected_columns.join(", ")} FROM ${this.tablename}`,
+						(err, row: Pick<ConvertSQLTypes<TableShape>, UnionizeParams<[ConvertSQLTypes<TableShape>, ...T]>>) => {
+							if (err) {
+								console.error(
+									chalk.red("SQLite3_DB [writeFromTableToFile()]: Error retrieving row --> " + err.message)
+								);
+							} else {
+								fileWriteStream.write(forEach_rowObject(row) + "\n", (writeErr) => {
+									if (writeErr) {
+										console.error(
+											chalk.red("SQLite3_DB [writeFromTableToFile()]: Error writing to file --> " + writeErr.message)
+										);
+									}
+								});
+							}
+						},
+						(completeErr, rowCount) => {
+							if (completeErr) {
+								console.error(
+									chalk.red(
+										`SQLite3_DB [writeFromTableToFile()]: Error completing query at ${rowCount} row count --> ` +
+											completeErr.message
+									)
+								);
+							}
+
+							fileWriteStream.end(() => {
+								resolve();
+							});
+						}
+					);
 				});
 			});
 		}
@@ -468,115 +520,12 @@ class SQLite3_DB {
 			return Object.keys(obj).map((key) => obj[key]);
 		}
 	};
-
-	/* CREATE TEMPORARY TABLE temp_file(
-	line_no INTEGER,
-	line_string TEXT
-	) */
 }
 
 /* Exported members below */
 export { SQLite3_DB }; // SQLite3_DB is not exported as default to enforce the name SQLite3_DB, as this name provides better clarity about the functionality
 
 /*
-
-	static fromFileInsertEachRow(
-		dbHandle: sqlite3.Database,
-		inputFile: PathLike,
-		username: string,
-		commit_time: string,
-		commit_date: string,
-		commit_no: number,
-		commit_msg: string
-	) {
-		return new Promise<void>((resolve) => {
-			const lineReader = createInterface({
-				input: createReadStream(inputFile, "utf8"),
-				crlfDelay: Infinity, // To handle both Unix and Windows line endings
-			});
-
-			let line_no = 0;
-
-			lineReader.on("line", (line_string) => {
-				// Insert each line into the table
-				dbHandle.serialize(() => {
-					line_no += 1;
-					dbHandle.run(
-						`INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-					VALUES (?, TIME(?), DATE(?), ?, ?, ?, ?)`,
-						[username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg],
-						(err) => {
-							err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
-						}
-					);
-				}); // db.serialize() make the database process go step by step / synchronously
-			});
-
-			lineReader.on("close", () => {
-				resolve();
-			});
-
-			lineReader.on("error", (err) => {
-				console.error(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
-				resolve();
-			});
-		});
-	}
-
-	static writeFromTableToFile(dbHandle: sqlite3.Database, outFile: PathLike, sqlQuery: string) {
-		return new Promise<void>((resolve) => {
-			const fileWriteStream = createWriteStream(outFile);
-
-			dbHandle.serialize(() => {
-				dbHandle.each(
-					sqlQuery,
-					(err, row: { line_string: string }) => {
-						if (err) {
-							console.error(chalk.red("SQLite3_DB.writeFromTableToFile: Error retrieving row --> " + err.message));
-						} else {
-							fileWriteStream.write(row.line_string + "\n", (writeErr) => {
-								if (writeErr) {
-									console.error(
-										chalk.red("SQLite3_DB.writeFromTableToFile: Error writing to file --> " + writeErr.message)
-									);
-								}
-							});
-						}
-					},
-					(completeErr, rowCount) => {
-						if (completeErr) {
-							console.error(
-								chalk.red(
-									`SQLite3_DB.writeFromTableToFile: Error completing query at ${rowCount} row count --> ` +
-										completeErr.message
-								)
-							);
-						}
-
-						fileWriteStream.end(() => {
-							resolve();
-						});
-					}
-				);
-			});
-		});
-	} // db.serialize() does not impact the order of execution of read and write streams of fileWriteStream cause they run parallel in event loop
-
-    -------------------------------------------------------------------------------------------------------------------------------------------------
-    const commit_time = SQLite3_DB.localTime();
-    const commit_date = SQLite3_DB.localDate();
-
-    await SQLite3_DB.fromFileInsertEachRow(
-    db,
-    "../../optimizedsumofprimes.cpp",
-    "Sahil Dutta",
-    commit_time,
-    commit_date,
-    commitData.commit_no,
-    "My first commit"
-    );
-
-    await SQLite3_DB.writeFromTableToFile(db, "../../output.txt", "SELECT line_string FROM commit_log");
     ----------------------------------------------------------------------------------------------------------------------------------------------
     - Namespace-Class merging:
 

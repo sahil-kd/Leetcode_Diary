@@ -44,34 +44,35 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
     const listener = new SQLite3_DB.eventEmitter();
     listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
     const connection1 = await SQLite3_DB.connect("./db/test.db");
-    if (connection1) {
-        const table1 = await connection1.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
-            sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
-            username: "TEXT NOT NULL",
-            commit_time: "TIME NOT NULL",
-            commit_date: "DATE NOT NULL",
-            commit_no: "INTEGER NOT NULL",
-            line_no: "INTEGER NOT NULL",
-            line_string: "TEXT NOT NULL",
-            commit_msg: "TEXT DEFAULT NULL",
+    const table1 = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
+        sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
+        username: "TEXT NOT NULL",
+        commit_time: "TIME NOT NULL",
+        commit_date: "DATE NOT NULL",
+        commit_no: "INTEGER NOT NULL",
+        line_no: "INTEGER NOT NULL",
+        line_string: "TEXT NOT NULL",
+        commit_msg: "TEXT DEFAULT NULL",
+    });
+    let line_number = 0;
+    await table1?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+        line_number += 1;
+        table1.insertRow({
+            username: "Sahil",
+            commit_time: SQLite3_DB.localTime(),
+            commit_date: SQLite3_DB.localDate(),
+            commit_no: 1,
+            line_no: line_number,
+            line_string: line,
+            commit_msg: null,
         });
-        let line_number = 0;
-        await table1.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
-            line_number += 1;
-            table1.insertRow({
-                username: "Sahil",
-                commit_time: SQLite3_DB.localTime(),
-                commit_date: SQLite3_DB.localDate(),
-                commit_no: 1,
-                line_no: line_number,
-                line_string: line,
-                commit_msg: null,
-            });
-        });
-        console.log(await table1.select("line_no", "line_string"));
-        table1.deleteTable();
-        connection1.disconnect();
-    }
+    });
+    await table1?.writeFromTableToFile("../../output.txt", (row) => {
+        return `[${row.commit_time}] | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string}`;
+    }, ["line_no", "line_string", "commit_time"]);
+    console.log(await table1?.selectAll());
+    table1?.deleteTable();
+    connection1?.disconnect();
     if (undefined) {
         const commitData = f.readJson("./db/commitData.json");
         commitData.commit_no += 1;

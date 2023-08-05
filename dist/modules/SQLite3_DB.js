@@ -1,7 +1,7 @@
 import sqlite3 from "sqlite3";
 import chalk from "chalk";
 import { EventEmitter } from "node:events";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 class SQLite3_DB {
     static allConnections = [];
@@ -12,7 +12,7 @@ class SQLite3_DB {
             const instance = new SQLite3_DB();
             instance.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
                 if (err) {
-                    console.error(chalk.red("AppError: Error connecting to the database --> ", err.message));
+                    console.error(chalk.red("SQLite3_DB: Error connecting to the database --> ", err.message));
                     resolve(undefined);
                 }
                 else {
@@ -39,6 +39,10 @@ class SQLite3_DB {
     }
     closeAllConnections() {
         for (const db of SQLite3_DB.allConnections) {
+            if (db === undefined) {
+                console.error(chalk.red("SQLite3_DB: Auto disconnector error --> Database not connected"));
+                continue;
+            }
             db.serialize(() => {
                 db.close((err) => {
                     if (err) {
@@ -52,10 +56,10 @@ class SQLite3_DB {
         }
     }
     disconnect() {
-        this.dbHandler?.serialize(() => {
+        this.dbHandler.serialize(() => {
             this.dbHandler.close((err) => {
                 if (err) {
-                    console.error(chalk.red("AppError: db disconnection error --> " + err.message));
+                    console.error(chalk.red("SQLite3_DB: db disconnection error --> " + err.message));
                 }
             });
         });
@@ -91,7 +95,7 @@ class SQLite3_DB {
             this.dbHandler?.serialize(() => {
                 this.dbHandler.run(this.sqlQuery, (err) => {
                     if (err) {
-                        console.error(chalk.red("AppError: Table-creation Error --> " + err.message));
+                        console.error(chalk.red("SQLite3_DB: Table-creation Error --> " + err.message));
                     }
                 });
             });
@@ -102,43 +106,43 @@ class SQLite3_DB {
         static async CREATE_TEMPORARY_TABLE(tablename, shape) {
             return new this(tablename, shape, TABLE.instanceOfSQLite3_DB?.dbHandler, "CREATE TEMPORARY TABLE");
         }
-        method(o) {
-            console.log(o);
-            console.log("objectPropertyValuesToArray below: \n");
-            console.log(this.objectPropertyValuesToArray(o));
-            let q = "(";
-            Object.keys(o).map((key) => {
-                q += `${key}, `;
-            });
-            q = q.slice(0, -2);
-            q += ")";
-            console.log("q = " + q);
-        }
         insertRow(log) {
             let second_part = "VALUES (";
             let sql_query = `INSERT INTO ${this.tablename} (`;
+            let second_part2 = ["VALUES ("];
+            let sql_query2 = [`INSERT INTO ${this.tablename} (`];
+            Object.freeze(log);
             Object.keys(log).map((key) => {
                 sql_query += `${key}, `;
+                sql_query2.push(key);
                 second_part += "?, ";
+                second_part2.push("?");
             });
             sql_query = sql_query.slice(0, -2);
             second_part = second_part.slice(0, -2);
             sql_query += ")\n";
             second_part += ")";
             sql_query += second_part;
-            this.dbHandler?.serialize(() => {
+            sql_query2.push(")");
+            second_part2.push(")");
+            sql_query2.push(second_part2.join(", "));
+            console.log("--------------------------------------------------");
+            console.log(sql_query2.join(", "));
+            console.log("\n" + sql_query);
+            console.log("--------------------------------------------------");
+            this.dbHandler.serialize(() => {
                 this.dbHandler.run(sql_query, this.objectPropertyValuesToArray(log), (err) => {
-                    err && console.error(chalk.red("AppError: row/entry insertion error --> " + err.message));
+                    err && console.error(chalk.red("SQLite3_DB [insertRow()]: row/entry insertion error --> " + err.message));
                 });
             });
         }
         selectAll() {
             return new Promise((resolve) => {
                 let result;
-                this.dbHandler?.serialize(() => {
+                this.dbHandler.serialize(() => {
                     this.dbHandler.all(`SELECT * FROM ${this.tablename}`, (err, rows) => {
                         if (err) {
-                            console.error(chalk.red("AppError: Table output error --> --> " + err.message));
+                            console.error(chalk.red("SQLite3_DB [selectAll()]: SELECT * error --> --> " + err.message));
                             resolve(undefined);
                         }
                         else {
@@ -154,10 +158,10 @@ class SQLite3_DB {
         select(...columns) {
             return new Promise((resolve) => {
                 let result;
-                this.dbHandler?.serialize(() => {
+                this.dbHandler.serialize(() => {
                     this.dbHandler.all(`SELECT ${columns.join(", ")} FROM ${this.tablename}`, (err, rows) => {
                         if (err) {
-                            console.log(chalk.red("AppError: Table output error --> --> " + err.message));
+                            console.log(chalk.red("SQLite3_DB [select()]: SELECT error --> " + err.message));
                             resolve(undefined);
                         }
                         else {
@@ -171,10 +175,10 @@ class SQLite3_DB {
             });
         }
         deleteTable() {
-            this.dbHandler?.serialize(() => {
+            this.dbHandler.serialize(() => {
                 this.dbHandler.run(`DROP TABLE ${this.tablename}`, (err) => {
                     if (err) {
-                        console.error(chalk.red("AppError: Table deletion error --> " + err.message));
+                        console.error(chalk.red("SQLite3_DB: Table deletion error --> " + err.message));
                     }
                 });
             });
@@ -190,8 +194,35 @@ class SQLite3_DB {
                     resolve();
                 });
                 lineReader.on("error", (err) => {
-                    console.error(chalk.red("AppError: Error reading the inputFile: --> " + err.message));
+                    console.error(chalk.red("SQLite3_DB [fromFileInsertEachRow()]: Error reading the inputFile: --> " + err.message));
                     resolve();
+                });
+            });
+        }
+        writeFromTableToFile(outputFile, forEach_rowObject, ...selected_columns) {
+            return new Promise((resolve) => {
+                const fileWriteStream = createWriteStream(outputFile);
+                this.dbHandler.serialize(() => {
+                    this.dbHandler.each(`SELECT ${selected_columns.length === 0 ? "*" : selected_columns.join(", ")} FROM ${this.tablename}`, (err, row) => {
+                        if (err) {
+                            console.error(chalk.red("SQLite3_DB [writeFromTableToFile()]: Error retrieving row --> " + err.message));
+                        }
+                        else {
+                            fileWriteStream.write(forEach_rowObject(row) + "\n", (writeErr) => {
+                                if (writeErr) {
+                                    console.error(chalk.red("SQLite3_DB [writeFromTableToFile()]: Error writing to file --> " + writeErr.message));
+                                }
+                            });
+                        }
+                    }, (completeErr, rowCount) => {
+                        if (completeErr) {
+                            console.error(chalk.red(`SQLite3_DB [writeFromTableToFile()]: Error completing query at ${rowCount} row count --> ` +
+                                completeErr.message));
+                        }
+                        fileWriteStream.end(() => {
+                            resolve();
+                        });
+                    });
                 });
             });
         }
