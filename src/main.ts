@@ -114,7 +114,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 
 	// optimizedsumofprimes.cpp | long_file_10_000_lines.txt
 
-	await table1?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+	await table1?.fromFileInsertEachRow("../../long_file_1000_lines.txt", (line) => {
 		line_number += 1;
 		table1.insertRow({
 			username: "Sahil",

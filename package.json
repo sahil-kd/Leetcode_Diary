@@ -9,7 +9,8 @@
 		"start": "node dist/main.js",
 		"dev": "tsc -w",
 		"lib": "tsc --declaration src/modules/file_n_path_ops.ts",
-		"db": "sqlite3 db/test.db"
+		"db": "sqlite3 db/test.db",
+		"cpp": "cd \"C:/Users/dell/Desktop/Github repos/Leetcode_Diary/src/modules/\" && g++ SQLite3_API.cpp -o SQLite3_API && \"C:/Users/dell/Desktop/Github repos/Leetcode_Diary/src/modules/\"SQLite3_API"
 	},
 	"repository": {
 		"type": "git",

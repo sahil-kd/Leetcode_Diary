@@ -331,41 +331,22 @@ class SQLite3_DB {
 		*/
 
 		insertRow(log: ConvertSQLTypes<OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>) {
-			let second_part = "VALUES (";
-			let sql_query = `INSERT INTO ${this.tablename} (`;
-			let second_part2 = ["VALUES ("];
-			let sql_query2 = [`INSERT INTO ${this.tablename} (`];
+			let keys_arr: string[] = [];
 
-			// Freezing the object for tiny performance gains
+			// Freezing the object for tiny performance gains --> 2 secs lower time with object freezing
 			Object.freeze(log);
 
-			Object.keys(log).map((key) => {
-				sql_query += `${key}, `;
-				sql_query2.push(key);
-				second_part += "?, ";
-				second_part2.push("?");
-			});
-			sql_query = sql_query.slice(0, -2);
-			second_part = second_part.slice(0, -2);
-			sql_query += ")\n";
-			second_part += ")";
+			Object.keys(log).map((key) => keys_arr.push(key));
 
-			sql_query += second_part;
+			/* I made this function and query creation below as efficient as possible without losing ease of use */
 
-			sql_query2.push(")");
-			second_part2.push(")");
-
-			sql_query2.push(second_part2.join(", "));
-			console.log("--------------------------------------------------");
-			console.log(sql_query2.join(", "));
-
-			console.log("\n" + sql_query);
-			console.log("--------------------------------------------------");
+			let placeholders = new Array(keys_arr.length).fill("?").join(", ");
+			let sql_query = `INSERT INTO ${this.tablename} (${keys_arr.join(", ")}) VALUES (${placeholders})`;
 
 			(this.dbHandler as sqlite3.Database).serialize(() => {
 				(this.dbHandler as sqlite3.Database).run(
 					sql_query,
-					this.objectPropertyValuesToArray(log as ConvertSQLTypes<TableShape>),
+					Object.keys(log).map((key) => (log as ConvertSQLTypes<TableShape>)[key]),
 					(err) => {
 						err && console.error(chalk.red("SQLite3_DB [insertRow()]: row/entry insertion error --> " + err.message));
 					}
@@ -469,12 +450,15 @@ class SQLite3_DB {
 			// return type is apparently void | PromiseLike<void>
 			return new Promise<void>((resolve) => {
 				const fileWriteStream = createWriteStream(outputFile);
+				const sql_query = `SELECT ${selected_columns.length === 0 ? "*" : selected_columns.join(", ")} FROM ${
+					this.tablename
+				}`;
 
 				// asserting type cause here dbHandler will be of type sqlite3.Database to avoid using unnecessary if checks like this this.dbHandler?.serialize(...)
 				// to improve performance when transpiled to javascript, cause these tiny things matters in large databases
 				(this.dbHandler as sqlite3.Database).serialize(() => {
 					(this.dbHandler as sqlite3.Database).each(
-						`SELECT ${selected_columns.length === 0 ? "*" : selected_columns.join(", ")} FROM ${this.tablename}`,
+						sql_query,
 						(err, row: Pick<ConvertSQLTypes<TableShape>, UnionizeParams<[ConvertSQLTypes<TableShape>, ...T]>>) => {
 							if (err) {
 								console.error(
@@ -514,10 +498,6 @@ class SQLite3_DB {
 		private removeTrailingCommas(inputString: string) {
 			const cleanedString = inputString.replace(/[, \n]+$/, "");
 			return cleanedString;
-		}
-
-		private objectPropertyValuesToArray(obj: ConvertSQLTypes<TableShape>): Array<string | number | null> {
-			return Object.keys(obj).map((key) => obj[key]);
 		}
 	};
 }

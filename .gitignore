@@ -2,3 +2,5 @@
 *.env
 rough.ts
 *.db
+*.exe
+*.bat

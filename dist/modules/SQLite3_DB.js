@@ -107,31 +107,13 @@ class SQLite3_DB {
             return new this(tablename, shape, TABLE.instanceOfSQLite3_DB?.dbHandler, "CREATE TEMPORARY TABLE");
         }
         insertRow(log) {
-            let second_part = "VALUES (";
-            let sql_query = `INSERT INTO ${this.tablename} (`;
-            let second_part2 = ["VALUES ("];
-            let sql_query2 = [`INSERT INTO ${this.tablename} (`];
+            let keys_arr = [];
             Object.freeze(log);
-            Object.keys(log).map((key) => {
-                sql_query += `${key}, `;
-                sql_query2.push(key);
-                second_part += "?, ";
-                second_part2.push("?");
-            });
-            sql_query = sql_query.slice(0, -2);
-            second_part = second_part.slice(0, -2);
-            sql_query += ")\n";
-            second_part += ")";
-            sql_query += second_part;
-            sql_query2.push(")");
-            second_part2.push(")");
-            sql_query2.push(second_part2.join(", "));
-            console.log("--------------------------------------------------");
-            console.log(sql_query2.join(", "));
-            console.log("\n" + sql_query);
-            console.log("--------------------------------------------------");
+            Object.keys(log).map((key) => keys_arr.push(key));
+            let placeholders = new Array(keys_arr.length).fill("?").join(", ");
+            let sql_query = `INSERT INTO ${this.tablename} (${keys_arr.join(", ")}) VALUES (${placeholders})`;
             this.dbHandler.serialize(() => {
-                this.dbHandler.run(sql_query, this.objectPropertyValuesToArray(log), (err) => {
+                this.dbHandler.run(sql_query, Object.keys(log).map((key) => log[key]), (err) => {
                     err && console.error(chalk.red("SQLite3_DB [insertRow()]: row/entry insertion error --> " + err.message));
                 });
             });
@@ -202,8 +184,9 @@ class SQLite3_DB {
         writeFromTableToFile(outputFile, forEach_rowObject, ...selected_columns) {
             return new Promise((resolve) => {
                 const fileWriteStream = createWriteStream(outputFile);
+                const sql_query = `SELECT ${selected_columns.length === 0 ? "*" : selected_columns.join(", ")} FROM ${this.tablename}`;
                 this.dbHandler.serialize(() => {
-                    this.dbHandler.each(`SELECT ${selected_columns.length === 0 ? "*" : selected_columns.join(", ")} FROM ${this.tablename}`, (err, row) => {
+                    this.dbHandler.each(sql_query, (err, row) => {
                         if (err) {
                             console.error(chalk.red("SQLite3_DB [writeFromTableToFile()]: Error retrieving row --> " + err.message));
                         }
@@ -229,9 +212,6 @@ class SQLite3_DB {
         removeTrailingCommas(inputString) {
             const cleanedString = inputString.replace(/[, \n]+$/, "");
             return cleanedString;
-        }
-        objectPropertyValuesToArray(obj) {
-            return Object.keys(obj).map((key) => obj[key]);
         }
     };
 }

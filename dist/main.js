@@ -55,7 +55,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
         commit_msg: "TEXT DEFAULT NULL",
     });
     let line_number = 0;
-    await table1?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+    await table1?.fromFileInsertEachRow("../../long_file_1000_lines.txt", (line) => {
         line_number += 1;
         table1.insertRow({
             username: "Sahil",
