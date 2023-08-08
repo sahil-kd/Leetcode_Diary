@@ -1,25 +1,35 @@
 #include <iostream>
-#include <string>
+// #include <string>
+#include "include/sqlite3.h"
 int main()
 {
-    int input;
-    std::string str = "hello world";
-    const std::string d = "";
-    std::cout << "Hello world\n";
-    std::cout << "Enter the input: ";
-    std::cin >> input;
-    std::cout << "\nOutput: " << input;
-    int arr[2] = {12, 34};
+    sqlite3 *db;
+    int rc = sqlite3_open("test.db", &db);
 
-    /*
-    Hello this is a comment block
-    */
-
-    for (auto c : arr)
+    if (rc)
     {
-        std::cout << c << ", ";
+        std::cerr << "Error opening database: " << sqlite3_errmsg(db) << std::endl;
+        return 1;
     }
 
-    int b = 123; // #FF00FF
+    const char *createTableSQL = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)";
+    rc = sqlite3_exec(db, createTableSQL, 0, 0, 0);
+
+    if (rc)
+    {
+        std::cerr << "Error creating table: " << sqlite3_errmsg(db) << std::endl;
+        return 1;
+    }
+
+    const char *insertSQL = "INSERT INTO users (name) VALUES ('John Doe')";
+    rc = sqlite3_exec(db, insertSQL, 0, 0, 0);
+
+    if (rc)
+    {
+        std::cerr << "Error inserting data: " << sqlite3_errmsg(db) << std::endl;
+        return 1;
+    }
+
+    sqlite3_close(db);
     return 0;
 }

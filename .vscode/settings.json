@@ -1,6 +1,10 @@
 {
 	"files.associations": {
 		"thread": "cpp",
-		"iostream": "cpp"
+		"iostream": "cpp",
+		"filesystem": "cpp",
+		"sstream": "cpp",
+		"vector": "cpp",
+		"string": "cpp"
 	}
 }

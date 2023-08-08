@@ -1,3 +1,13 @@
+/*
+	- I'm currently stopping the development of this library cause it's very slow, even for inserting 1000 lines
+		it takes 30 secs which is far too slow, hence I've opted to use C++ SQLite3 library and will use that as
+		an API to mediate between my node process and SQLite3 database
+
+	- But in future I'll try to develop this library further, currently it produces a lot of objects during
+		insertion which makes it 30% slower than sqlite3 node module (from my observations) due to garbage 
+		collection
+*/
+
 import sqlite3 from "sqlite3";
 import chalk from "chalk";
 import { EventEmitter } from "node:events";

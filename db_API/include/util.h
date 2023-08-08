@@ -1,53 +1,63 @@
 #pragma once
-#include<iostream>
-#include<string>
-#include<vector>
-#include<sstream>
-#include<filesystem>
-#include<Windows.h>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <sstream>
+#include <filesystem>
+#include <Windows.h>
 
 class util
 {
 public:
 	// delay for (input) milliseconds | Great debug tool
-	static void delay(int milliseconds) {
+	static void delay(int milliseconds)
+	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
 	}
-	static void input_int_vector(std::vector<int>& numbers) {
+	static void input_int_vector(std::vector<int> &numbers)
+	{
 		std::string inp;
 		std::getline(std::cin, inp);
 		std::istringstream par(inp);
 		int num;
-		while (par >> num) {
+		while (par >> num)
+		{
 			numbers.push_back(num);
 		}
 	}
-	static void input_string_vector(std::vector<std::string>& numbers) {
+	static void input_string_vector(std::vector<std::string> &numbers)
+	{
 		std::string inp;
 		std::getline(std::cin, inp);
 		std::istringstream par(inp);
 		std::string num;
-		while (par >> num) {
+		while (par >> num)
+		{
 			numbers.push_back(num);
 		}
 	}
-	static void trim_string(std::string& inputString) {
-		if (inputString.empty()) return;
+	static void trim_string(std::string &inputString)
+	{
+		if (inputString.empty())
+			return;
 
-		const char* const delimiters = " \t\n\r";
+		const char *const delimiters = " \t\n\r";
 		size_t start = inputString.find_first_not_of(delimiters);
-		
-		if (start == std::string::npos) {
+
+		if (start == std::string::npos)
+		{
 			inputString.clear();
 			return;
 		}
 		size_t end = inputString.find_last_not_of(delimiters);
 		inputString = inputString.substr(start, end - start + 1);
 	}
-	static void remove_char_from_string(std::string str, char a) {
+	static void remove_char_from_string(std::string str, char a)
+	{
 		str.erase(remove(str.begin(), str.end(), a), str.end());
 	}
-	static bool does_file_exist(const std::string& filename, const std::string& directory) {
+	static bool does_file_exist(const std::string &filename, const std::string &directory)
+	{
 		std::filesystem::path filePath = directory;
 		filePath /= filename;
 		return std::filesystem::exists(filePath);
