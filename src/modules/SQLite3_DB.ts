@@ -49,7 +49,7 @@ type ConvertSQLTypes<T> = {
 		? string | null
 		: T[K] extends "DATE DEFAULT NULL"
 		? string | null
-		: "Invalid SQLite type";
+		: never;
 }; // basically interating over the property types of interface T (this is a type function)
 
 type OmitPropertyByType<T, U> = {
@@ -57,7 +57,7 @@ type OmitPropertyByType<T, U> = {
 };
 
 // (below) first is Default type else union type excluding Default type
-type UnionizeParams<T extends any[]> = T extends [infer Default, ...infer Params] ? Params[number] : T[0];
+type UnionizeParams<T extends any[]> = T extends [infer Default, ...infer Params] ? Params[number] : T[0]; // meaning make a type param1 | param2 | ...
 
 class SQLite3_DB {
 	private static allConnections: sqlite3.Database[] = []; // Private class attribute to store all active database connections
@@ -228,6 +228,7 @@ class SQLite3_DB {
 				| "INTEGER DEFAULT NULL"
 				| "TIME DEFAULT NULL"
 				| "DATE DEFAULT NULL"
+				| "INTEGER PRIMARY KEY"
 				| "INTEGER PRIMARY KEY AUTOINCREMENT";
 		}
 	> {
@@ -296,6 +297,7 @@ class SQLite3_DB {
 					| "INTEGER DEFAULT NULL"
 					| "TIME DEFAULT NULL"
 					| "DATE DEFAULT NULL"
+					| "INTEGER PRIMARY KEY"
 					| "INTEGER PRIMARY KEY AUTOINCREMENT";
 			}
 		>(tablename: string, shape: T) {
@@ -317,6 +319,7 @@ class SQLite3_DB {
 					| "INTEGER DEFAULT NULL"
 					| "TIME DEFAULT NULL"
 					| "DATE DEFAULT NULL"
+					| "INTEGER PRIMARY KEY"
 					| "INTEGER PRIMARY KEY AUTOINCREMENT";
 			}
 		>(tablename: string, shape: T) {
@@ -340,13 +343,17 @@ class SQLite3_DB {
 
 		*/
 
-		insertRow(log: ConvertSQLTypes<OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>) {
+		insertRow(
+			logObject:
+				| ConvertSQLTypes<OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>
+				| ConvertSQLTypes<OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY">>
+		) {
 			let keys_arr: string[] = [];
 
 			// Freezing the object for tiny performance gains --> 2 secs lower time with object freezing
-			Object.freeze(log);
+			Object.freeze(logObject);
 
-			Object.keys(log).map((key) => keys_arr.push(key));
+			Object.keys(logObject).map((key) => keys_arr.push(key));
 
 			/* I made this function and query creation below as efficient as possible without losing ease of use */
 
@@ -356,7 +363,7 @@ class SQLite3_DB {
 			(this.dbHandler as sqlite3.Database).serialize(() => {
 				(this.dbHandler as sqlite3.Database).run(
 					sql_query,
-					Object.keys(log).map((key) => (log as ConvertSQLTypes<TableShape>)[key]),
+					Object.keys(logObject).map((key) => (logObject as ConvertSQLTypes<TableShape>)[key]),
 					(err) => {
 						err && console.error(chalk.red("SQLite3_DB [insertRow()]: row/entry insertion error --> " + err.message));
 					}
@@ -416,7 +423,7 @@ class SQLite3_DB {
 
 		deleteTable() {
 			(this.dbHandler as sqlite3.Database).serialize(() => {
-				(this.dbHandler as sqlite3.Database).run(`DROP TABLE ${this.tablename}`, (err) => {
+				(this.dbHandler as sqlite3.Database).run(`DROP TABLE IF EXISTS ${this.tablename}`, (err) => {
 					if (err) {
 						console.error(chalk.red("SQLite3_DB: Table deletion error --> " + err.message));
 					}

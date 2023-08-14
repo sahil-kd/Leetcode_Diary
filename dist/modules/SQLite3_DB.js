@@ -106,14 +106,14 @@ class SQLite3_DB {
         static async CREATE_TEMPORARY_TABLE(tablename, shape) {
             return new this(tablename, shape, TABLE.instanceOfSQLite3_DB?.dbHandler, "CREATE TEMPORARY TABLE");
         }
-        insertRow(log) {
+        insertRow(logObject) {
             let keys_arr = [];
-            Object.freeze(log);
-            Object.keys(log).map((key) => keys_arr.push(key));
+            Object.freeze(logObject);
+            Object.keys(logObject).map((key) => keys_arr.push(key));
             let placeholders = new Array(keys_arr.length).fill("?").join(", ");
             let sql_query = `INSERT INTO ${this.tablename} (${keys_arr.join(", ")}) VALUES (${placeholders})`;
             this.dbHandler.serialize(() => {
-                this.dbHandler.run(sql_query, Object.keys(log).map((key) => log[key]), (err) => {
+                this.dbHandler.run(sql_query, Object.keys(logObject).map((key) => logObject[key]), (err) => {
                     err && console.error(chalk.red("SQLite3_DB [insertRow()]: row/entry insertion error --> " + err.message));
                 });
             });
@@ -158,7 +158,7 @@ class SQLite3_DB {
         }
         deleteTable() {
             this.dbHandler.serialize(() => {
-                this.dbHandler.run(`DROP TABLE ${this.tablename}`, (err) => {
+                this.dbHandler.run(`DROP TABLE IF EXISTS ${this.tablename}`, (err) => {
                     if (err) {
                         console.error(chalk.red("SQLite3_DB: Table deletion error --> " + err.message));
                     }

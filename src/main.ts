@@ -94,11 +94,10 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 	const connection1 = await SQLite3_DB.connect("./db/test.db");
 	// const connection1 = await SQLite3_DB.connect("../"); // finally working for db connection failure
 
-	// await simulate_awaited_promise(2000); // not placing await for async fn terminates the program | rest unreachable code
+	// await simulate_awaited_promise(2000);
 
-	// if (connection1 && connection2) {
-	const table1 = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
-		sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
+	const commit_log = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
+		sl_no: "INTEGER PRIMARY KEY",
 		username: "TEXT NOT NULL",
 		commit_time: "TIME NOT NULL",
 		commit_date: "DATE NOT NULL",
@@ -106,50 +105,91 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 		line_no: "INTEGER NOT NULL",
 		line_string: "TEXT NOT NULL",
 		commit_msg: "TEXT DEFAULT NULL",
-	}); // it is awaiting
-
-	let line_number = 0;
-	// Total insert ops takes about 2:30 minutes for 10,000 lines from the file --> benchmarked locally | but should take 10 secs in highly optimized apps
-	// 2:30 minutes for write operation but for reading from table barely 5 seconds
-
+	}); // CORE table
 	// optimizedsumofprimes.cpp | long_file_10_000_lines.txt
 
-	await table1?.fromFileInsertEachRow("../../long_file_1000_lines.txt", (line) => {
+	const pre_stage_comparer = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("pre_stage_comparer", {
+		id: "INTEGER PRIMARY KEY",
+		line_no: "INTEGER NOT NULL",
+		line_string: "TEXT NOT NULL",
+	}); // a temporary table to compare before staging changes | primary key just for sqlite3 engine to optimize database operations
+
+	let line_number = 0;
+	const local_date = SQLite3_DB.localDate(); // by decreasing function calls it can insert 1000 lines in 12 secs & 10,000 lines in 02:26 mins
+	const local_time = SQLite3_DB.localTime();
+	// const pre_stage_comparer = {...}; // defining this lead to no performance increase and is surprisingly slower | V8 gc is optimized
+
+	await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
 		line_number += 1;
-		table1.insertRow({
-			username: "Sahil",
-			commit_time: SQLite3_DB.localTime(),
-			commit_date: SQLite3_DB.localDate(),
-			commit_no: 1,
+		pre_stage_comparer.insertRow({
 			line_no: line_number,
 			line_string: line,
-			commit_msg: null,
 		});
 	});
 
-	await table1?.writeFromTableToFile(
-		"../../output.txt",
-		(row) => {
-			return `[${row.commit_time}] | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string}`;
-		},
-		["line_no", "line_string", "commit_time"]
-	);
+	// connection1?.dbHandler?.run("DROP TABLE IF EXISTS prev_commit"); // this operation happens after comparing
 
-	console.log(await table1?.selectAll()); // do a forEach line by line output to a file | variable overflow check
-	// console.log(await table1.select("line_no", "line_string"));
+	const prev_commit = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("prev_commit", {
+		id: "INTEGER PRIMARY KEY",
+		line_no: "INTEGER NOT NULL",
+		line_string: "TEXT NOT NULL",
+	});
 
-	table1?.deleteTable();
+	/* Record data at external JSON */
+
+	const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
+	commitData.commit_no += 1; // set the changes to staging
+	// commitData.abrupt_exit = !commitData.abrupt_exit; // set the changes to staging
+	f.writeJson("./db/commitData.json", commitData); // commit changes to the JSON file --> then resolve the promise
+
+	/* End of JSON data updates */
+
+	connection1?.dbHandler?.serialize(() => {
+		connection1.dbHandler?.run(`
+		
+		BEGIN TRANSACTION;
+	
+		-- Compare lines based on line number and insert rows that have different lines between pre_stage_comparer and prev_commit
+	
+		INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+		SELECT "Sahil", ${local_time}, ${local_date}, ${commitData.commit_no}, pre_stage_comparer.line_no, pre_stage_comparer.line_string, NULL
+		FROM pre_stage_comparer
+		JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
+		WHERE pre_stage_comparer.line_string <> prev_commit.line_string;
+	
+		-- Deletes all rows
+		DELETE FROM prev_commit;
+	
+		-- Inserts all rows from pre_stage_comparer to prev_commit
+		INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
+	
+		COMMIT;
+		
+		`);
+	});
+
+	console.log(await prev_commit?.selectAll());
+
+	// console.log(await pre_stage_comparer?.selectAll()); // do a forEach line by line output to a file | variable overflow check
+	// console.log(await commit_log.select("line_no", "line_string"));
+
+	// await pre_stage_comparer?.writeFromTableToFile(
+	// 	"../../output.txt",
+	// 	(row) => {
+	// 		return `[${row.commit_time}] | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string}`;
+	// 	},
+	// 	["line_no", "line_string", "commit_time"]
+	// );
+
+	await commit_log?.writeFromTableToFile("../../output.txt", (row) => {
+		return `[${row.sl_no} | ${row.username} | ${row.commit_time}] | [${row.commit_date}] | ${row.commit_no} | ${
+			row.line_no < 10 ? row.line_no + " " : row.line_no
+		} | ${row.line_string} | ${row.commit_msg}`;
+	});
+
+	// commit_log?.deleteTable();
 
 	connection1?.disconnect();
-
-	if (undefined) {
-		/* Record data at external JSON */
-
-		const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
-		commitData.commit_no += 1; // set the changes to staging
-		// commitData.abrupt_exit = !commitData.abrupt_exit; // set the changes to staging
-		f.writeJson("./db/commitData.json", commitData); // commit changes to the JSON file --> then resolve the promise
-	}
 
 	/* Database exit point */
 

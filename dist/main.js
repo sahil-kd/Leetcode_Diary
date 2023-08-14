@@ -44,8 +44,8 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
     const listener = new SQLite3_DB.eventEmitter();
     listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
     const connection1 = await SQLite3_DB.connect("./db/test.db");
-    const table1 = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
-        sl_no: "INTEGER PRIMARY KEY AUTOINCREMENT",
+    const commit_log = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
+        sl_no: "INTEGER PRIMARY KEY",
         username: "TEXT NOT NULL",
         commit_time: "TIME NOT NULL",
         commit_date: "DATE NOT NULL",
@@ -54,30 +54,57 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
         line_string: "TEXT NOT NULL",
         commit_msg: "TEXT DEFAULT NULL",
     });
+    const pre_stage_comparer = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("pre_stage_comparer", {
+        id: "INTEGER PRIMARY KEY",
+        line_no: "INTEGER NOT NULL",
+        line_string: "TEXT NOT NULL",
+    });
     let line_number = 0;
-    await table1?.fromFileInsertEachRow("../../long_file_1000_lines.txt", (line) => {
+    const local_date = SQLite3_DB.localDate();
+    const local_time = SQLite3_DB.localTime();
+    await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
         line_number += 1;
-        table1.insertRow({
-            username: "Sahil",
-            commit_time: SQLite3_DB.localTime(),
-            commit_date: SQLite3_DB.localDate(),
-            commit_no: 1,
+        pre_stage_comparer.insertRow({
             line_no: line_number,
             line_string: line,
-            commit_msg: null,
         });
     });
-    await table1?.writeFromTableToFile("../../output.txt", (row) => {
-        return `[${row.commit_time}] | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string}`;
-    }, ["line_no", "line_string", "commit_time"]);
-    console.log(await table1?.selectAll());
-    table1?.deleteTable();
+    const prev_commit = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("prev_commit", {
+        id: "INTEGER PRIMARY KEY",
+        line_no: "INTEGER NOT NULL",
+        line_string: "TEXT NOT NULL",
+    });
+    const commitData = f.readJson("./db/commitData.json");
+    commitData.commit_no += 1;
+    f.writeJson("./db/commitData.json", commitData);
+    connection1?.dbHandler?.serialize(() => {
+        connection1.dbHandler?.run(`
+		
+		BEGIN TRANSACTION;
+	
+		-- Compare lines based on line number and insert rows that have different lines between pre_stage_comparer and prev_commit
+	
+		INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+		SELECT "Sahil", ${local_time}, ${local_date}, ${commitData.commit_no}, pre_stage_comparer.line_no, pre_stage_comparer.line_string, NULL
+		FROM pre_stage_comparer
+		JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
+		WHERE pre_stage_comparer.line_string <> prev_commit.line_string;
+	
+		-- Deletes all rows
+		DELETE FROM prev_commit;
+	
+		-- Inserts all rows from pre_stage_comparer to prev_commit
+		INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
+	
+		COMMIT;
+		
+		`);
+    });
+    console.log(await prev_commit?.selectAll());
+    await commit_log?.writeFromTableToFile("../../output.txt", (row) => {
+        return `[${row.sl_no} | ${row.username} | ${row.commit_time}] | [${row.commit_date}] | ${row.commit_no} | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string} | ${row.commit_msg}`;
+    });
     connection1?.disconnect();
-    if (undefined) {
-        const commitData = f.readJson("./db/commitData.json");
-        commitData.commit_no += 1;
-        f.writeJson("./db/commitData.json", commitData);
-    }
     while (true) {
         process.stdout.write("\n");
         process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(process.cwd()));
