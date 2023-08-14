@@ -145,27 +145,36 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 	/* End of JSON data updates */
 
 	connection1?.dbHandler?.serialize(() => {
+		// connection1.dbHandler?.run("BEGIN TRANSACTION;");
+
+		connection1.dbHandler?.run(
+			`
+			INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+			SELECT "Sahil", ?, ?, ?, pre_stage_comparer.line_no, pre_stage_comparer.line_string, NULL
+			FROM pre_stage_comparer
+			LEFT JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
+			WHERE pre_stage_comparer.line_string <> prev_commit.line_string
+				OR prev_commit.line_string IS NULL
+				OR pre_stage_comparer.line_no > COALESCE((SELECT MAX(line_no) FROM prev_commit), 0);
+			`,
+			[local_time, local_date, commitData.commit_no]
+		); // Compare lines based on line number and insert rows that have different lines between pre_stage_comparer and prev_commit
+
 		connection1.dbHandler?.run(`
-		
-		BEGIN TRANSACTION;
-	
-		-- Compare lines based on line number and insert rows that have different lines between pre_stage_comparer and prev_commit
-	
-		INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-		SELECT "Sahil", ${local_time}, ${local_date}, ${commitData.commit_no}, pre_stage_comparer.line_no, pre_stage_comparer.line_string, NULL
-		FROM pre_stage_comparer
-		JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
-		WHERE pre_stage_comparer.line_string <> prev_commit.line_string;
-	
-		-- Deletes all rows
-		DELETE FROM prev_commit;
-	
-		-- Inserts all rows from pre_stage_comparer to prev_commit
-		INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
-	
-		COMMIT;
-		
-		`);
+			DELETE FROM prev_commit;
+		`); // Deletes all rows
+
+		connection1.dbHandler?.run(`
+			INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
+		`); //Inserts all rows from pre_stage_comparer to prev_commit
+
+		// connection1.dbHandler?.run("COMMIT;", [], (err) => {
+		// 	if (err) {
+		// 		console.error("Error committing transaction:", err.message);
+		// 	} else {
+		// 		console.log("Transaction committed successfully.");
+		// 	}
+		// });
 	});
 
 	console.log(await prev_commit?.selectAll());
@@ -186,8 +195,6 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 			row.line_no < 10 ? row.line_no + " " : row.line_no
 		} | ${row.line_string} | ${row.commit_msg}`;
 	});
-
-	// commit_log?.deleteTable();
 
 	connection1?.disconnect();
 
