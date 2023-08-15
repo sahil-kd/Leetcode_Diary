@@ -241,6 +241,7 @@ class SQLite3_DB {
 			| { [x: string]: string | number | boolean | null };
 
 		public dbHandler: sqlite3.Database | undefined; // raw database handler for when developer wants to use native sqlite3 mthods like run(), all(), etc
+		// cause in larger program it's inconvenient to navigate to check which table belongs to which connection
 		public tablename: string; // available if dev needs the name of the table --> helpful for debugging & logging in larger codebases
 
 		/*

@@ -42,63 +42,111 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
     const currentDateTime = getLocalDateTime();
     console.log(currentDateTime);
     const listener = new SQLite3_DB.eventEmitter();
+    const commit_event = new SQLite3_DB.eventEmitter();
     listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
     const connection1 = await SQLite3_DB.connect("./db/test.db");
-    const commit_log = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
-        sl_no: "INTEGER PRIMARY KEY",
+    const commit_log_cache = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log_cache", {
+        commit_no: "INTEGER PRIMARY KEY",
         username: "TEXT NOT NULL",
-        commit_time: "TIME NOT NULL",
-        commit_date: "DATE NOT NULL",
-        commit_no: "INTEGER NOT NULL",
-        line_no: "INTEGER NOT NULL",
-        line_string: "TEXT NOT NULL",
-        commit_msg: "TEXT DEFAULT NULL",
+        max_lines_in_commit: "INTEGER NOT NULL",
     });
-    const pre_stage_comparer = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("pre_stage_comparer", {
-        id: "INTEGER PRIMARY KEY",
-        line_no: "INTEGER NOT NULL",
-        line_string: "TEXT NOT NULL",
+    commit_event.on("commit_event", async (commit_message) => {
+        const commit_log = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
+            sl_no: "INTEGER PRIMARY KEY",
+            commit_time: "TIME NOT NULL",
+            commit_date: "DATE NOT NULL",
+            commit_no: "INTEGER NOT NULL",
+            line_no: "INTEGER NOT NULL",
+            line_string: "TEXT NOT NULL",
+            commit_msg: "TEXT DEFAULT NULL",
+        });
+        const pre_stage_comparer = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("pre_stage_comparer", {
+            id: "INTEGER PRIMARY KEY",
+            line_no: "INTEGER NOT NULL",
+            line_string: "TEXT NOT NULL",
+        });
+        let line_number = 0;
+        const local_date = SQLite3_DB.localDate();
+        const local_time = SQLite3_DB.localTime();
+        await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+            line_number += 1;
+            pre_stage_comparer.insertRow({
+                line_no: line_number,
+                line_string: line,
+            });
+        });
+        const prev_commit = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("prev_commit", {
+            id: "INTEGER PRIMARY KEY",
+            line_no: "INTEGER NOT NULL",
+            line_string: "TEXT NOT NULL",
+        });
+        const commit_profile = f.readJson("./db/commit_profile.json");
+        const commitData = f.readJson("./db/commitData.json");
+        commitData.commit_no += 1;
+        f.writeJson("./db/commitData.json", commitData);
+        connection1?.dbHandler?.serialize(() => {
+            connection1.dbHandler?.run("BEGIN TRANSACTION;");
+            connection1.dbHandler?.run(`
+				INSERT INTO commit_log_cache (commit_no, username, max_lines_in_commit)
+				SELECT ?, ?, COALESCE((SELECT MAX(line_no) FROM pre_stage_comparer), 0);
+				`, [commitData.commit_no, commit_profile.username]);
+            connection1.dbHandler?.run(`
+				INSERT INTO commit_log (commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+				SELECT
+					?,
+					?,
+					?,
+					pre_stage_comparer.line_no,
+					pre_stage_comparer.line_string,
+					?
+				FROM pre_stage_comparer
+				LEFT JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
+				WHERE pre_stage_comparer.line_string <> prev_commit.line_string
+					OR prev_commit.line_string IS NULL
+					OR pre_stage_comparer.line_no > COALESCE((SELECT MAX(line_no) FROM prev_commit), 0);
+				`, [local_time, local_date, commitData.commit_no, commit_message]);
+            connection1.dbHandler?.run(`
+				DELETE FROM prev_commit;
+			`);
+            connection1.dbHandler?.run(`
+				INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
+			`);
+            connection1.dbHandler?.run("COMMIT;", [], (err) => {
+                if (err) {
+                    console.error("Error committing transaction [commit_event error]:", err.message);
+                }
+                else {
+                }
+            });
+        });
+        pre_stage_comparer?.deleteTable();
     });
-    let line_number = 0;
-    const local_date = SQLite3_DB.localDate();
-    const local_time = SQLite3_DB.localTime();
-    await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
-        line_number += 1;
-        pre_stage_comparer.insertRow({
-            line_no: line_number,
-            line_string: line,
+    const reset_event = new SQLite3_DB.eventEmitter();
+    reset_event.on("reset_event", async (commit_no) => {
+        const unloader = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("unloader", {
+            line_no: "TEXT NOT NULL",
+            line_string: "TEXT NOT NULL",
+        });
+        connection1?.dbHandler?.serialize(() => {
+            connection1.dbHandler?.run(`
+			INSERT INTO unloader
+			SELECT line_no, line_string
+			FROM commit_log
+			WHERE commit_log.commit_no = ?
+			LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0);
+			`, [commit_no, commit_no], async (err) => {
+                if (err) {
+                    console.error(chalk.redBright("Unloader error: ", err));
+                }
+                else {
+                    await unloader?.writeFromTableToFile("../../output.txt", (row) => {
+                        return row.line_string;
+                    });
+                    unloader?.deleteTable();
+                }
+            });
         });
     });
-    const prev_commit = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("prev_commit", {
-        id: "INTEGER PRIMARY KEY",
-        line_no: "INTEGER NOT NULL",
-        line_string: "TEXT NOT NULL",
-    });
-    const commitData = f.readJson("./db/commitData.json");
-    commitData.commit_no += 1;
-    f.writeJson("./db/commitData.json", commitData);
-    connection1?.dbHandler?.serialize(() => {
-        connection1.dbHandler?.run(`
-			INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-			SELECT "Sahil", ?, ?, ?, pre_stage_comparer.line_no, pre_stage_comparer.line_string, NULL
-			FROM pre_stage_comparer
-			LEFT JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
-			WHERE pre_stage_comparer.line_string <> prev_commit.line_string
-				OR prev_commit.line_string IS NULL
-				OR pre_stage_comparer.line_no > COALESCE((SELECT MAX(line_no) FROM prev_commit), 0);
-			`, [local_time, local_date, commitData.commit_no]);
-        connection1.dbHandler?.run(`
-			DELETE FROM prev_commit;
-		`);
-        connection1.dbHandler?.run(`
-			INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
-		`);
-    });
-    console.log(await prev_commit?.selectAll());
-    await commit_log?.writeFromTableToFile("../../output.txt", (row) => {
-        return `[${row.sl_no} | ${row.username} | ${row.commit_time}] | [${row.commit_date}] | ${row.commit_no} | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string} | ${row.commit_msg}`;
-    });
-    connection1?.disconnect();
     while (true) {
         process.stdout.write("\n");
         process.stdout.write(chalk.cyanBright("Leetcode Diary") + chalk.yellow(" --> ") + chalk.yellow(process.cwd()));
@@ -115,8 +163,21 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
             listener.emit("db event", ...(parsed_input.args.length > 0 ? parsed_input.args : default_args));
             continue;
         }
+        else if (command == "c") {
+            commit_event.emit("commit_event", ...(parsed_input.args.length > 0 ? parsed_input.args : [null]));
+            continue;
+        }
+        else if (command === "reset") {
+            parsed_input.args[0]
+                ? reset_event.emit("reset_event", parsed_input.args[0])
+                : console.error(chalk.red("reset command takes in one parameter | reset n | where n refers to the nth commit"));
+            continue;
+        }
         else if (command === "exit" || command === "q") {
             listener.removeAllListeners("db event");
+            commit_event.removeAllListeners("commit_event");
+            reset_event.removeAllListeners("reset_event");
+            connection1?.disconnect();
             break;
         }
         else if (command === "pwd") {

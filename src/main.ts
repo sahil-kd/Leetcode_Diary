@@ -81,6 +81,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 	/* Event listensers section */
 
 	const listener = new SQLite3_DB.eventEmitter();
+	const commit_event = new SQLite3_DB.eventEmitter();
 
 	listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
 
@@ -92,92 +93,122 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 	// items.forEach((item) => console.log(">> ", item));
 
 	const connection1 = await SQLite3_DB.connect("./db/test.db");
-	// const connection1 = await SQLite3_DB.connect("../"); // finally working for db connection failure
+
+	const commit_log_cache = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log_cache", {
+		commit_no: "INTEGER PRIMARY KEY",
+		username: "TEXT NOT NULL",
+		max_lines_in_commit: "INTEGER NOT NULL",
+	});
 
 	// await simulate_awaited_promise(2000);
 
-	const commit_log = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
-		sl_no: "INTEGER PRIMARY KEY",
-		username: "TEXT NOT NULL",
-		commit_time: "TIME NOT NULL",
-		commit_date: "DATE NOT NULL",
-		commit_no: "INTEGER NOT NULL",
-		line_no: "INTEGER NOT NULL",
-		line_string: "TEXT NOT NULL",
-		commit_msg: "TEXT DEFAULT NULL",
-	}); // CORE table
-	// optimizedsumofprimes.cpp | long_file_10_000_lines.txt
+	/* Commit Event listener below */
 
-	const pre_stage_comparer = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("pre_stage_comparer", {
-		id: "INTEGER PRIMARY KEY",
-		line_no: "INTEGER NOT NULL",
-		line_string: "TEXT NOT NULL",
-	}); // a temporary table to compare before staging changes | primary key just for sqlite3 engine to optimize database operations
+	commit_event.on("commit_event", async (commit_message) => {
+		const commit_log = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
+			sl_no: "INTEGER PRIMARY KEY",
+			commit_time: "TIME NOT NULL",
+			commit_date: "DATE NOT NULL",
+			commit_no: "INTEGER NOT NULL",
+			line_no: "INTEGER NOT NULL",
+			line_string: "TEXT NOT NULL",
+			commit_msg: "TEXT DEFAULT NULL",
+		}); // CORE table
+		// optimizedsumofprimes.cpp | long_file_10_000_lines.txt
 
-	let line_number = 0;
-	const local_date = SQLite3_DB.localDate(); // by decreasing function calls it can insert 1000 lines in 12 secs & 10,000 lines in 02:26 mins
-	const local_time = SQLite3_DB.localTime();
-	// const pre_stage_comparer = {...}; // defining this lead to no performance increase and is surprisingly slower | V8 gc is optimized
+		const pre_stage_comparer = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("pre_stage_comparer", {
+			id: "INTEGER PRIMARY KEY",
+			line_no: "INTEGER NOT NULL",
+			line_string: "TEXT NOT NULL",
+		}); // a temporary table to compare before staging changes | primary key just for sqlite3 engine to optimize database operations
 
-	await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
-		line_number += 1;
-		pre_stage_comparer.insertRow({
-			line_no: line_number,
-			line_string: line,
+		let line_number = 0;
+		const local_date = SQLite3_DB.localDate(); // by decreasing function calls it can insert 1000 lines in 12 secs & 10,000 lines in 02:26 mins
+		const local_time = SQLite3_DB.localTime();
+		// const pre_stage_comparer = {...}; // defining this lead to no performance increase and is surprisingly slower | V8 gc is optimized
+
+		await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+			line_number += 1;
+			pre_stage_comparer.insertRow({
+				line_no: line_number,
+				line_string: line,
+			});
 		});
-	});
 
-	// connection1?.dbHandler?.run("DROP TABLE IF EXISTS prev_commit"); // this operation happens after comparing
+		// connection1?.dbHandler?.run("DROP TABLE IF EXISTS prev_commit"); // this operation happens after comparing
 
-	const prev_commit = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("prev_commit", {
-		id: "INTEGER PRIMARY KEY",
-		line_no: "INTEGER NOT NULL",
-		line_string: "TEXT NOT NULL",
-	});
+		const prev_commit = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("prev_commit", {
+			id: "INTEGER PRIMARY KEY",
+			line_no: "INTEGER NOT NULL",
+			line_string: "TEXT NOT NULL",
+		});
 
-	/* Record data at external JSON */
+		/* Record data at external JSON */
+		const commit_profile = f.readJson("./db/commit_profile.json"); // retrive data as object (key-value pair) from JSON file
 
-	const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
-	commitData.commit_no += 1; // set the changes to staging
-	// commitData.abrupt_exit = !commitData.abrupt_exit; // set the changes to staging
-	f.writeJson("./db/commitData.json", commitData); // commit changes to the JSON file --> then resolve the promise
+		const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
+		commitData.commit_no += 1; // set the changes to staging
+		// commitData.abrupt_exit = !commitData.abrupt_exit; // set the changes to staging
+		f.writeJson("./db/commitData.json", commitData); // commit changes to the JSON file --> then resolve the promise
 
-	/* End of JSON data updates */
+		/* End of JSON data updates */
 
-	connection1?.dbHandler?.serialize(() => {
-		// connection1.dbHandler?.run("BEGIN TRANSACTION;");
+		connection1?.dbHandler?.serialize(() => {
+			/* **START TRANSACTION** */
 
-		connection1.dbHandler?.run(
-			`
-			INSERT INTO commit_log (username, commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
-			SELECT "Sahil", ?, ?, ?, pre_stage_comparer.line_no, pre_stage_comparer.line_string, NULL
-			FROM pre_stage_comparer
-			LEFT JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
-			WHERE pre_stage_comparer.line_string <> prev_commit.line_string
-				OR prev_commit.line_string IS NULL
-				OR pre_stage_comparer.line_no > COALESCE((SELECT MAX(line_no) FROM prev_commit), 0);
-			`,
-			[local_time, local_date, commitData.commit_no]
-		); // Compare lines based on line number and insert rows that have different lines between pre_stage_comparer and prev_commit
+			connection1.dbHandler?.run("BEGIN TRANSACTION;");
 
-		connection1.dbHandler?.run(`
-			DELETE FROM prev_commit;
-		`); // Deletes all rows
+			connection1.dbHandler?.run(
+				`
+				INSERT INTO commit_log_cache (commit_no, username, max_lines_in_commit)
+				SELECT ?, ?, COALESCE((SELECT MAX(line_no) FROM pre_stage_comparer), 0);
+				`,
+				[commitData.commit_no, commit_profile.username]
+			);
 
-		connection1.dbHandler?.run(`
-			INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
-		`); //Inserts all rows from pre_stage_comparer to prev_commit
+			connection1.dbHandler?.run(
+				`
+				INSERT INTO commit_log (commit_time, commit_date, commit_no, line_no, line_string, commit_msg)
+				SELECT
+					?,
+					?,
+					?,
+					pre_stage_comparer.line_no,
+					pre_stage_comparer.line_string,
+					?
+				FROM pre_stage_comparer
+				LEFT JOIN prev_commit ON pre_stage_comparer.line_no = prev_commit.line_no
+				WHERE pre_stage_comparer.line_string <> prev_commit.line_string
+					OR prev_commit.line_string IS NULL
+					OR pre_stage_comparer.line_no > COALESCE((SELECT MAX(line_no) FROM prev_commit), 0);
+				`,
+				[local_time, local_date, commitData.commit_no, commit_message]
+			); // Compare lines based on line number and insert rows that have different lines between pre_stage_comparer and prev_commit
 
-		// connection1.dbHandler?.run("COMMIT;", [], (err) => {
-		// 	if (err) {
-		// 		console.error("Error committing transaction:", err.message);
-		// 	} else {
-		// 		console.log("Transaction committed successfully.");
-		// 	}
-		// });
-	});
+			// $A7z|+RvP#x1|+Yt8+|kLw+|Q9u+|DmB|+3Jn+|K2X+|++||F1p|+G4q+||E0v+|C6t+|I5o+|H3z+ is used here to represent Empty row
 
-	console.log(await prev_commit?.selectAll());
+			connection1.dbHandler?.run(`
+				DELETE FROM prev_commit;
+			`); // Deletes all rows
+
+			connection1.dbHandler?.run(`
+				INSERT INTO prev_commit SELECT * FROM pre_stage_comparer;
+			`); //Inserts all rows from pre_stage_comparer to prev_commit
+
+			connection1.dbHandler?.run("COMMIT;", [], (err) => {
+				if (err) {
+					console.error("Error committing transaction [commit_event error]:", err.message);
+				} else {
+					// console.log("Transaction committed successfully.");
+				}
+			});
+
+			/* **END OF TRANSACTION** */
+		});
+
+		// temporary table deleted cause commits will happen in the same session & temp table assures data cleanup on session closure
+		pre_stage_comparer?.deleteTable();
+	}); // End of Commit Event
 
 	// console.log(await pre_stage_comparer?.selectAll()); // do a forEach line by line output to a file | variable overflow check
 	// console.log(await commit_log.select("line_no", "line_string"));
@@ -190,13 +221,44 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 	// 	["line_no", "line_string", "commit_time"]
 	// );
 
-	await commit_log?.writeFromTableToFile("../../output.txt", (row) => {
-		return `[${row.sl_no} | ${row.username} | ${row.commit_time}] | [${row.commit_date}] | ${row.commit_no} | ${
-			row.line_no < 10 ? row.line_no + " " : row.line_no
-		} | ${row.line_string} | ${row.commit_msg}`;
+	const reset_event = new SQLite3_DB.eventEmitter();
+
+	reset_event.on("reset_event", async (commit_no) => {
+		const unloader = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("unloader", {
+			line_no: "TEXT NOT NULL",
+			line_string: "TEXT NOT NULL",
+		});
+
+		connection1?.dbHandler?.serialize(() => {
+			connection1.dbHandler?.run(
+				`
+			INSERT INTO unloader
+			SELECT line_no, line_string
+			FROM commit_log
+			WHERE commit_log.commit_no = ?
+			LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0);
+			`,
+				[commit_no, commit_no],
+				async (err) => {
+					if (err) {
+						console.error(chalk.redBright("Unloader error: ", err));
+					} else {
+						await unloader?.writeFromTableToFile("../../output.txt", (row) => {
+							return row.line_string;
+						});
+
+						unloader?.deleteTable(); // since these events can occur within the same session before temporary table is automatically deleted
+					}
+				}
+			);
+		});
 	});
 
-	connection1?.disconnect();
+	// await commit_log?.writeFromTableToFile("../../output.txt", (row) => {
+	// 	return `[${row.sl_no} | ${row.username} | ${row.commit_time}] | [${row.commit_date}] | ${row.commit_no} | ${
+	// 		row.line_no < 10 ? row.line_no + " " : row.line_no
+	// 	} | ${row.line_string} | ${row.commit_msg}`;
+	// });
 
 	/* Database exit point */
 
@@ -218,8 +280,19 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 			const default_args = ["default1", "default2"];
 			listener.emit("db event", ...(parsed_input.args.length > 0 ? parsed_input.args : default_args));
 			continue;
+		} else if (command == "c") {
+			commit_event.emit("commit_event", ...(parsed_input.args.length > 0 ? parsed_input.args : [null]));
+			continue;
+		} else if (command === "reset") {
+			parsed_input.args[0]
+				? reset_event.emit("reset_event", parsed_input.args[0])
+				: console.error(chalk.red("reset command takes in one parameter | reset n | where n refers to the nth commit"));
+			continue;
 		} else if (command === "exit" || command === "q") {
 			listener.removeAllListeners("db event"); // also need to run background processes to ensure cleanup when user abruptly closes the app
+			commit_event.removeAllListeners("commit_event");
+			reset_event.removeAllListeners("reset_event");
+			connection1?.disconnect(); // disconnecting database
 			break;
 		} else if (command === "pwd") {
 			console.log(chalk.cyanBright(process.cwd()));
