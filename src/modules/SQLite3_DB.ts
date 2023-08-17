@@ -62,22 +62,31 @@ type UnionizeParams<T extends any[]> = T extends [infer Default, ...infer Params
 class SQLite3_DB {
 	private static allConnections: sqlite3.Database[] = []; // Private class attribute to store all active database connections
 
-	dbHandler: sqlite3.Database | undefined = undefined;
+	readonly dbHandler: sqlite3.Database | undefined = undefined;
 
-	constructor() {}
+	private static all_instances: SQLite3_DB[] = [];
 
-	static async connect(databaseFilePath: string) {
+	private constructor() {} // disallow direct creation of class instances
+
+	public static async connect(databaseFilePath: string) {
 		return new Promise<SQLite3_DB | undefined>((resolve) => {
 			const instance = new SQLite3_DB();
-			instance.dbHandler = new sqlite3.Database(databaseFilePath, (err) => {
+			(instance.dbHandler as sqlite3.Database | undefined) = new sqlite3.Database(databaseFilePath, (err) => {
 				if (err) {
 					console.error(chalk.red("SQLite3_DB: Error connecting to the database --> ", err.message));
 					resolve(undefined);
 				} else {
+					SQLite3_DB.all_instances.push(instance);
 					SQLite3_DB.allConnections.push(instance.dbHandler as sqlite3.Database); // tracking all instances of SQLite3_DB
 					// instance of class SQLite3_DB stored inside class TABLE | 'this' here is an instance of SQLite3_DB
 					// but since this method is static we are creating an instance of SQLite3_DB cause we can't directly reference using 'this' keyword
-					instance.TABLE.instanceOfSQLite3_DB = instance;
+					(instance.TABLE.instanceOfSQLite3_DB as SQLite3_DB | null) = instance; // easier than setting up getters
+
+					if (SQLite3_DB.allConnections.length === 1) {
+						SQLite3_DB.setupExitHandler();
+					} // adding event listeners for each exit event for all instances of the database only once when the first instance of this class
+					// is created to avoid the overhead of many listeners for each new database connection
+
 					resolve(instance);
 				}
 			});
@@ -86,64 +95,67 @@ class SQLite3_DB {
 
 	/* Exit handler function below --> automatic database disconnectors --> I don't think they are working right now */
 
-	setupExitHandler() {
-		// listener for normal exit event
-		process.on("exit", () => {
-			this.closeAllConnections();
+	private static setupExitHandler() {
+		// listener for normal 'exit' event
+		process.on("beforeExit", async () => {
+			await this.closeAllConnections();
+			process.exit(0);
 		});
 
-		// Attach a listener for the 'SIGINT' event (Ctrl+C) also emitted when X button pressed or user puts pc to sleep
-		process.on("SIGINT", () => {
-			this.closeAllConnections();
+		// a listener for the 'SIGINT' event (Ctrl+C) keypress
+		process.on("SIGINT", async () => {
+			await this.closeAllConnections();
 			process.exit(1);
 		});
 
 		// a listener for the 'uncaughtException' event
-		process.on("uncaughtException", (err) => {
+		process.on("uncaughtException", async (err) => {
 			console.error("Uncaught Exception:", err);
-			this.closeAllConnections();
+			await this.closeAllConnections();
+			process.exit(1); // Exit with an error code after cleanup
+		});
+
+		// a listener for the 'unhandledRejection' event
+		process.on("unhandledRejection", async (err) => {
+			console.error("Unhandled promise Rejection:", err);
+			await this.closeAllConnections();
 			process.exit(1); // Exit with an error code after cleanup
 		});
 	}
 
-	closeAllConnections() {
-		for (const db of SQLite3_DB.allConnections) {
-			if (db === undefined) {
-				console.error(chalk.red("SQLite3_DB: Auto disconnector error --> Database not connected"));
-				continue;
-			}
-
-			db.serialize(() => {
-				db.close((err) => {
-					if (err) {
-						console.error("Error closing database:", err.message);
-					} else {
-						console.log("Database connection closed successfully.");
-					}
-				});
-			});
+	private static async closeAllConnections() {
+		for (const db of SQLite3_DB.all_instances) {
+			await db.disconnect(); // without awaiting for each dbHandler there isn't enough window of time for db connections to close
 		}
+
+		console.log(chalk.greenBright("\nAll database connections succesfully closed"));
 	}
 
 	/* Core functions below */
 
-	disconnect() {
-		(this.dbHandler as sqlite3.Database).serialize(() => {
-			(this.dbHandler as sqlite3.Database).close((err) => {
-				if (err) {
-					console.error(chalk.red("SQLite3_DB: db disconnection error --> " + err.message));
-				}
-			}); // Close connection to the database
+	private async disconnect() {
+		return new Promise<void>((resolve) => {
+			(this.dbHandler as sqlite3.Database).serialize(() => {
+				(this.dbHandler as sqlite3.Database).close((err) => {
+					if (err) {
+						console.error(chalk.red("SQLite3_DB: db auto-disconnector error --> " + err.message));
+						resolve(); // don't reject else there are conditions where it can get into an infinite loop
+					} else {
+						console.log(chalk.greenBright("db connection closed"));
+						resolve();
+					}
+				}); // Close connection to the database
+			});
 		});
 	} // disconnection working
 
 	/* Local time and date functions below */
 
-	static localTime() {
+	public static localTime() {
 		return new Date().toLocaleTimeString("en-US", { hour12: false });
 	}
 
-	static localDate() {
+	public static localDate() {
 		const now = new Date();
 		const year = now.getFullYear();
 		const month = now.getMonth() + 1;
@@ -154,7 +166,7 @@ class SQLite3_DB {
 
 	/* Database event emitters below */
 
-	static eventEmitter = class extends EventEmitter {
+	public static eventEmitter = class extends EventEmitter {
 		constructor() {
 			super();
 		}
@@ -213,7 +225,7 @@ class SQLite3_DB {
 			connection1.disconnect();
 	*/
 
-	TABLE = class TABLE<
+	public TABLE = class TABLE<
 		TableShape extends {
 			[key: string]:
 				| "TEXT"
@@ -240,9 +252,9 @@ class SQLite3_DB {
 			| ((...args: any[]) => any | any[])
 			| { [x: string]: string | number | boolean | null };
 
-		public dbHandler: sqlite3.Database | undefined; // raw database handler for when developer wants to use native sqlite3 mthods like run(), all(), etc
+		public readonly dbHandler: sqlite3.Database | undefined; // raw database handler for when developer wants to use native sqlite3 mthods like run(), all(), etc
 		// cause in larger program it's inconvenient to navigate to check which table belongs to which connection
-		public tablename: string; // available if dev needs the name of the table --> helpful for debugging & logging in larger codebases
+		public readonly tablename: string; // available if dev needs the name of the table --> helpful for debugging & logging in larger codebases
 
 		/*
 			The static property below stores an instance of SQLite3_DB, each instance of SQLite3_DB can make many instances of
@@ -250,9 +262,9 @@ class SQLite3_DB {
 			as each instance of SQLite3_DB is given one dbHandler variable
 		*/
 
-		static instanceOfSQLite3_DB: SQLite3_DB | null = null; // Static property to store the instance of class SQLite3_DB
+		static readonly instanceOfSQLite3_DB: SQLite3_DB | null = null; // Static property to store the instance of class SQLite3_DB
 
-		constructor(
+		private constructor(
 			tablename: string,
 			shape: TableShape,
 			dbHandler: sqlite3.Database | undefined,
@@ -344,7 +356,7 @@ class SQLite3_DB {
 
 		*/
 
-		insertRow(
+		public insertRow(
 			logObject:
 				| ConvertSQLTypes<OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>
 				| ConvertSQLTypes<OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY">>
@@ -372,7 +384,7 @@ class SQLite3_DB {
 			});
 		}
 
-		selectAll() {
+		public selectAll() {
 			return new Promise<ConvertSQLTypes<TableShape>[] | null | undefined>((resolve) => {
 				let result;
 				(this.dbHandler as sqlite3.Database).serialize(() => {
@@ -399,7 +411,7 @@ class SQLite3_DB {
 
 		/* Duplicate entries inside select will be removed at runtime by sqlite3 module to allow only single column names selection */
 
-		select(...columns: Array<keyof TableShape>) {
+		public select(...columns: Array<keyof TableShape>) {
 			return new Promise<ConvertSQLTypes<TableShape>[] | null | undefined>((resolve) => {
 				let result;
 				(this.dbHandler as sqlite3.Database).serialize(() => {
@@ -422,7 +434,7 @@ class SQLite3_DB {
 			});
 		} // db.all() is asynchronous so promise added --> DON'T use this function for very large tables else memory overflow
 
-		deleteTable() {
+		public deleteTable() {
 			(this.dbHandler as sqlite3.Database).serialize(() => {
 				(this.dbHandler as sqlite3.Database).run(`DROP TABLE IF EXISTS ${this.tablename}`, (err) => {
 					if (err) {
@@ -434,7 +446,7 @@ class SQLite3_DB {
 
 		/* Database to file and file to database operations */
 
-		fromFileInsertEachRow(inputFile: PathLike, fn_forEach_row: (line_string_from_file: string) => void) {
+		public fromFileInsertEachRow(inputFile: PathLike, fn_forEach_row: (line_string_from_file: string) => void) {
 			return new Promise<void>((resolve) => {
 				const lineReader = createInterface({
 					input: createReadStream(inputFile, "utf8"),
@@ -458,7 +470,7 @@ class SQLite3_DB {
 
 		// Array<keyof OmitPropertyByType<TableShape, "INTEGER PRIMARY KEY AUTOINCREMENT">>
 
-		writeFromTableToFile<T extends Array<keyof TableShape>>(
+		public writeFromTableToFile<T extends Array<keyof TableShape>>(
 			outputFile: PathLike,
 			forEach_rowObject: (
 				rowObject: Pick<ConvertSQLTypes<TableShape>, UnionizeParams<[ConvertSQLTypes<TableShape>, ...T]>>

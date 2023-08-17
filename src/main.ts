@@ -87,12 +87,33 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 
 	/* Event listensers section exit */
 
+	/* External JSON storage --> to manage abrupt exits, power outages and user profile */
+
+	const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
+	const commit_profile = f.readJson("./db/commit_profile.json"); // retrive data as object (key-value pair) from JSON file
+
+	/* End of External JSON storage */
+
 	/* Database entry point --> later move .db to %LOCALAPPDATA% & %APPDATA% --> No need to abstract as in if-else in else we can run code on success & is faster */
 
 	// const items = await listItemsInDirectory(`"${dirPath}"`); // <-- working
 	// items.forEach((item) => console.log(">> ", item));
 
 	const connection1 = await SQLite3_DB.connect("./db/test.db");
+	// const connection2 = await SQLite3_DB.connect("./db/test.db");
+	// const connection3 = await SQLite3_DB.connect("./db/test.db"); // all db connections are automatically closed on common exit events
+
+	// connection1?.TABLE.instanceOfSQLite3_DB // I wanna prevent this
+
+	// connection1?.dbHandler?.close((err) => {
+	// 	err && console.error(err);
+	// });
+
+	// (function () {
+	// 	return new Promise<void>((resolve, reject) => {
+	// 		reject();
+	// 	});
+	// })(); // simultaing an unhandled promise
 
 	const commit_log_cache = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log_cache", {
 		commit_no: "INTEGER PRIMARY KEY",
@@ -101,6 +122,8 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 	});
 
 	// await simulate_awaited_promise(2000);
+
+	const tracking_file_address = "../../output.txt";
 
 	/* Commit Event listener below */
 
@@ -127,7 +150,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 		const local_time = SQLite3_DB.localTime();
 		// const pre_stage_comparer = {...}; // defining this lead to no performance increase and is surprisingly slower | V8 gc is optimized
 
-		await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+		await pre_stage_comparer?.fromFileInsertEachRow(tracking_file_address, (line) => {
 			line_number += 1;
 			pre_stage_comparer.insertRow({
 				line_no: line_number,
@@ -143,20 +166,15 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 			line_string: "TEXT NOT NULL",
 		});
 
-		/* Record data at external JSON */
-		const commit_profile = f.readJson("./db/commit_profile.json"); // retrive data as object (key-value pair) from JSON file
-
-		const commitData = f.readJson("./db/commitData.json"); // retrive data as object (key-value pair) from JSON file
-		commitData.commit_no += 1; // set the changes to staging
-		// commitData.abrupt_exit = !commitData.abrupt_exit; // set the changes to staging
-		f.writeJson("./db/commitData.json", commitData); // commit changes to the JSON file --> then resolve the promise
-
-		/* End of JSON data updates */
-
 		connection1?.dbHandler?.serialize(() => {
 			/* **START TRANSACTION** */
 
-			connection1.dbHandler?.run("BEGIN TRANSACTION;");
+			connection1.dbHandler?.run("BEGIN TRANSACTION;", [], (err) => {
+				if (!err) {
+					commitData.commit_no += 1; // set the changes to staging
+					// commitData.abrupt_exit = !commitData.abrupt_exit; // place this inside event listeners for exit and system outages
+				}
+			});
 
 			connection1.dbHandler?.run(
 				`
@@ -198,8 +216,10 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 			connection1.dbHandler?.run("COMMIT;", [], (err) => {
 				if (err) {
 					console.error("Error committing transaction [commit_event error]:", err.message);
+					commitData.commit_no -= 1; // rollback the staged changes
 				} else {
-					// console.log("Transaction committed successfully.");
+					// only commit to external JSON on successful transaction
+					f.writeJson("./db/commitData.json", commitData); // commit changes to the JSON file
 				}
 			});
 
@@ -230,6 +250,8 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 		});
 
 		connection1?.dbHandler?.serialize(() => {
+			connection1?.dbHandler?.run("BEGIN TRANSACTION");
+
 			connection1.dbHandler?.run(
 				`
 			INSERT INTO unloader
@@ -243,14 +265,23 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 					if (err) {
 						console.error(chalk.redBright("Unloader error: ", err));
 					} else {
-						await unloader?.writeFromTableToFile("../../output.txt", (row) => {
+						await unloader?.writeFromTableToFile(tracking_file_address, (row) => {
 							return row.line_string;
-						});
-
-						unloader?.deleteTable(); // since these events can occur within the same session before temporary table is automatically deleted
+						}); // writing to the file when write/insert operation is successful on unloader
 					}
 				}
 			);
+
+			// connection1.dbHandler?.run("DELETE FROM unloader");
+
+			connection1.dbHandler?.run("COMMIT", [], (err) => {
+				if (err) {
+					console.error(chalk.red("Error resetting or writing to file"));
+					unloader?.deleteTable(); // since these events can occur within the same session before temporary table is automatically deleted
+				} else {
+					unloader?.deleteTable(); // since these events can occur within the same session before temporary table is automatically deleted
+				}
+			});
 		});
 	});
 
@@ -284,15 +315,22 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 			commit_event.emit("commit_event", ...(parsed_input.args.length > 0 ? parsed_input.args : [null]));
 			continue;
 		} else if (command === "reset") {
-			parsed_input.args[0]
-				? reset_event.emit("reset_event", parsed_input.args[0])
-				: console.error(chalk.red("reset command takes in one parameter | reset n | where n refers to the nth commit"));
+			if (!parsed_input.args[0]) {
+				console.error(chalk.red("reset command takes in one parameter | reset n | where n refers to the nth commit"));
+			} else if (parseInt(parsed_input.args[0]) > 0 && parsed_input.args[0] <= commitData.commit_no) {
+				reset_event.emit("reset_event", parsed_input.args[0]);
+			} else if (!(parseInt(parsed_input.args[0]) > 0 && parsed_input.args[0] <= commitData.commit_no)) {
+				console.error(
+					chalk.red("reset index out of bounds | type --> reset n | n must refer to some pre-existing nth commit")
+				);
+			} else {
+				console.error(chalk.red("reset: unknown error"));
+			}
 			continue;
 		} else if (command === "exit" || command === "q") {
 			listener.removeAllListeners("db event"); // also need to run background processes to ensure cleanup when user abruptly closes the app
 			commit_event.removeAllListeners("commit_event");
 			reset_event.removeAllListeners("reset_event");
-			connection1?.disconnect(); // disconnecting database
 			break;
 		} else if (command === "pwd") {
 			console.log(chalk.cyanBright(process.cwd()));
@@ -651,7 +689,7 @@ async function simulate_awaited_promise(time_milliseconds: number) {
 	await (() => {
 		return new Promise<void>((resolve) => {
 			setTimeout(() => {
-				console.log(chalk.green(`\n${time_milliseconds} milliseconds period over\n`));
+				console.log(chalk.greenBright(`\n${time_milliseconds} milliseconds period over\n`));
 				resolve();
 			}, 2000);
 		});

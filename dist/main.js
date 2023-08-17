@@ -44,12 +44,15 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
     const listener = new SQLite3_DB.eventEmitter();
     const commit_event = new SQLite3_DB.eventEmitter();
     listener.on("db event", (a, b) => console.log(`db event fired with args ${a} and ${b}`));
+    const commitData = f.readJson("./db/commitData.json");
+    const commit_profile = f.readJson("./db/commit_profile.json");
     const connection1 = await SQLite3_DB.connect("./db/test.db");
     const commit_log_cache = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log_cache", {
         commit_no: "INTEGER PRIMARY KEY",
         username: "TEXT NOT NULL",
         max_lines_in_commit: "INTEGER NOT NULL",
     });
+    const tracking_file_address = "../../output.txt";
     commit_event.on("commit_event", async (commit_message) => {
         const commit_log = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("commit_log", {
             sl_no: "INTEGER PRIMARY KEY",
@@ -68,7 +71,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
         let line_number = 0;
         const local_date = SQLite3_DB.localDate();
         const local_time = SQLite3_DB.localTime();
-        await pre_stage_comparer?.fromFileInsertEachRow("../../optimizedsumofprimes.cpp", (line) => {
+        await pre_stage_comparer?.fromFileInsertEachRow(tracking_file_address, (line) => {
             line_number += 1;
             pre_stage_comparer.insertRow({
                 line_no: line_number,
@@ -80,12 +83,12 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
             line_no: "INTEGER NOT NULL",
             line_string: "TEXT NOT NULL",
         });
-        const commit_profile = f.readJson("./db/commit_profile.json");
-        const commitData = f.readJson("./db/commitData.json");
-        commitData.commit_no += 1;
-        f.writeJson("./db/commitData.json", commitData);
         connection1?.dbHandler?.serialize(() => {
-            connection1.dbHandler?.run("BEGIN TRANSACTION;");
+            connection1.dbHandler?.run("BEGIN TRANSACTION;", [], (err) => {
+                if (!err) {
+                    commitData.commit_no += 1;
+                }
+            });
             connection1.dbHandler?.run(`
 				INSERT INTO commit_log_cache (commit_no, username, max_lines_in_commit)
 				SELECT ?, ?, COALESCE((SELECT MAX(line_no) FROM pre_stage_comparer), 0);
@@ -114,8 +117,10 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
             connection1.dbHandler?.run("COMMIT;", [], (err) => {
                 if (err) {
                     console.error("Error committing transaction [commit_event error]:", err.message);
+                    commitData.commit_no -= 1;
                 }
                 else {
+                    f.writeJson("./db/commitData.json", commitData);
                 }
             });
         });
@@ -128,6 +133,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
             line_string: "TEXT NOT NULL",
         });
         connection1?.dbHandler?.serialize(() => {
+            connection1?.dbHandler?.run("BEGIN TRANSACTION");
             connection1.dbHandler?.run(`
 			INSERT INTO unloader
 			SELECT line_no, line_string
@@ -139,9 +145,17 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
                     console.error(chalk.redBright("Unloader error: ", err));
                 }
                 else {
-                    await unloader?.writeFromTableToFile("../../output.txt", (row) => {
+                    await unloader?.writeFromTableToFile(tracking_file_address, (row) => {
                         return row.line_string;
                     });
+                }
+            });
+            connection1.dbHandler?.run("COMMIT", [], (err) => {
+                if (err) {
+                    console.error(chalk.red("Error resetting or writing to file"));
+                    unloader?.deleteTable();
+                }
+                else {
                     unloader?.deleteTable();
                 }
             });
@@ -168,16 +182,24 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
             continue;
         }
         else if (command === "reset") {
-            parsed_input.args[0]
-                ? reset_event.emit("reset_event", parsed_input.args[0])
-                : console.error(chalk.red("reset command takes in one parameter | reset n | where n refers to the nth commit"));
+            if (!parsed_input.args[0]) {
+                console.error(chalk.red("reset command takes in one parameter | reset n | where n refers to the nth commit"));
+            }
+            else if (parseInt(parsed_input.args[0]) > 0 && parsed_input.args[0] <= commitData.commit_no) {
+                reset_event.emit("reset_event", parsed_input.args[0]);
+            }
+            else if (!(parseInt(parsed_input.args[0]) > 0 && parsed_input.args[0] <= commitData.commit_no)) {
+                console.error(chalk.red("reset index out of bounds | type --> reset n | n must refer to some pre-existing nth commit"));
+            }
+            else {
+                console.error(chalk.red("reset: unknown error"));
+            }
             continue;
         }
         else if (command === "exit" || command === "q") {
             listener.removeAllListeners("db event");
             commit_event.removeAllListeners("commit_event");
             reset_event.removeAllListeners("reset_event");
-            connection1?.disconnect();
             break;
         }
         else if (command === "pwd") {
@@ -463,7 +485,7 @@ async function simulate_awaited_promise(time_milliseconds) {
     await (() => {
         return new Promise((resolve) => {
             setTimeout(() => {
-                console.log(chalk.green(`\n${time_milliseconds} milliseconds period over\n`));
+                console.log(chalk.greenBright(`\n${time_milliseconds} milliseconds period over\n`));
                 resolve();
             }, 2000);
         });

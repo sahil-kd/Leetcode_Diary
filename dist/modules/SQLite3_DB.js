@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 class SQLite3_DB {
     static allConnections = [];
     dbHandler = undefined;
+    static all_instances = [];
     constructor() { }
     static async connect(databaseFilePath) {
         return new Promise((resolve) => {
@@ -16,51 +17,56 @@ class SQLite3_DB {
                     resolve(undefined);
                 }
                 else {
+                    SQLite3_DB.all_instances.push(instance);
                     SQLite3_DB.allConnections.push(instance.dbHandler);
                     instance.TABLE.instanceOfSQLite3_DB = instance;
+                    if (SQLite3_DB.allConnections.length === 1) {
+                        SQLite3_DB.setupExitHandler();
+                    }
                     resolve(instance);
                 }
             });
         });
     }
-    setupExitHandler() {
-        process.on("exit", () => {
-            this.closeAllConnections();
+    static setupExitHandler() {
+        process.on("beforeExit", async () => {
+            await this.closeAllConnections();
+            process.exit(0);
         });
-        process.on("SIGINT", () => {
-            this.closeAllConnections();
+        process.on("SIGINT", async () => {
+            await this.closeAllConnections();
             process.exit(1);
         });
-        process.on("uncaughtException", (err) => {
+        process.on("uncaughtException", async (err) => {
             console.error("Uncaught Exception:", err);
-            this.closeAllConnections();
+            await this.closeAllConnections();
+            process.exit(1);
+        });
+        process.on("unhandledRejection", async (err) => {
+            console.error("Unhandled promise Rejection:", err);
+            await this.closeAllConnections();
             process.exit(1);
         });
     }
-    closeAllConnections() {
-        for (const db of SQLite3_DB.allConnections) {
-            if (db === undefined) {
-                console.error(chalk.red("SQLite3_DB: Auto disconnector error --> Database not connected"));
-                continue;
-            }
-            db.serialize(() => {
-                db.close((err) => {
+    static async closeAllConnections() {
+        for (const db of SQLite3_DB.all_instances) {
+            await db.disconnect();
+        }
+        console.log(chalk.greenBright("\nAll database connections succesfully closed"));
+    }
+    async disconnect() {
+        return new Promise((resolve) => {
+            this.dbHandler.serialize(() => {
+                this.dbHandler.close((err) => {
                     if (err) {
-                        console.error("Error closing database:", err.message);
+                        console.error(chalk.red("SQLite3_DB: db auto-disconnector error --> " + err.message));
+                        resolve();
                     }
                     else {
-                        console.log("Database connection closed successfully.");
+                        console.log(chalk.greenBright("db connection closed"));
+                        resolve();
                     }
                 });
-            });
-        }
-    }
-    disconnect() {
-        this.dbHandler.serialize(() => {
-            this.dbHandler.close((err) => {
-                if (err) {
-                    console.error(chalk.red("SQLite3_DB: db disconnection error --> " + err.message));
-                }
             });
         });
     }
