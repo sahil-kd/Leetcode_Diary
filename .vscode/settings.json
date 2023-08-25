@@ -5,6 +5,13 @@
 		"filesystem": "cpp",
 		"sstream": "cpp",
 		"vector": "cpp",
-		"string": "cpp"
+		"string": "cpp",
+		"stdio.h": "c",
+		"cstring": "c"
+	},
+	// "C_Cpp.errorSquiggles": "disabled", // doing this turns off the slow intellisense & makes the DX better as compiler
+	// will point out errors
+	"code-runner.executorMap": {
+		"cpp": "cd db_API && g++ -o build/SQLite3_API.exe SQLite3_API.cpp build/sqlite3.dll" // building file
 	}
 }

@@ -128,84 +128,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
     });
     const reset_event = new SQLite3_DB.eventEmitter();
     reset_event.on("reset_event", async (commit_no) => {
-        const c_no = commit_no;
-        const unloader = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("unloader", {
-            line_no: "INTEGER NOT NULL",
-            line_string: "TEXT NOT NULL",
-        });
-        const final_result = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("final_result", {
-            line_no: "INTEGER PRIMARY KEY",
-            line_string: "TEXT NOT NULL",
-        });
-        connection1?.dbHandler?.serialize(() => {
-            connection1?.dbHandler?.run("BEGIN TRANSACTION");
-            connection1.dbHandler?.run(`
-			INSERT INTO unloader(line_no, line_string)
-			SELECT COALESCE(r.line_no, c.line_no) AS line_no,
-				COALESCE(r.line_string, c.line_string) AS line_string
-			FROM (
-				SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = ?
-				LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0)
-			) AS r
-			FULL OUTER JOIN (
-				SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = ?
-				LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0)
-			) AS c ON r.line_no = c.line_no
-			WHERE r.line_no IS NULL OR c.line_no IS NULL OR r.line_no != c.line_no
-			OR (r.line_no = c.line_no AND r.line_string IS NOT NULL);
-			`, [commit_no, commit_no, commit_no - 1, commit_no - 1], (err) => {
-                if (err) {
-                    console.error(chalk.redBright("Unloader stage 1 error: ", err));
-                }
-            });
-            commit_no = commit_no - 2;
-            while (commit_no > 0) {
-                connection1.dbHandler?.run(`
-					INSERT INTO unloader(line_no, line_string)
-					SELECT COALESCE(r.line_no, c.line_no) AS line_no,
-						COALESCE(r.line_string, c.line_string) AS line_string
-					FROM unloader AS r
-					FULL OUTER JOIN (
-						SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = ?
-						LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0)
-						) AS c ON r.line_no = c.line_no
-					WHERE r.line_no IS NULL OR c.line_no IS NULL OR r.line_no != c.line_no
-					OR (r.line_no = c.line_no AND r.line_string IS NOT NULL);
-			`, [commit_no, commit_no], (err) => {
-                    if (err) {
-                        console.error(chalk.redBright("Unloader stage 2 error: ", err));
-                    }
-                });
-                commit_no = commit_no - 1;
-            }
-            connection1.dbHandler?.run(`
-				INSERT INTO final_result(line_no, line_string)
-				SELECT DISTINCT * FROM unloader ORDER BY line_no ASC
-				LIMIT (
-					SELECT commit_log_cache.max_lines_in_commit
-					FROM commit_log_cache
-					WHERE commit_log_cache.commit_no = ?
-				);
-			`, [c_no], (err) => {
-                if (err) {
-                    console.error(chalk.redBright("Unloader stage 3 error: ", err));
-                }
-            });
-            connection1.dbHandler?.run("COMMIT", [], async (err) => {
-                if (err) {
-                    console.error(chalk.red("Error resetting or writing to file"));
-                    unloader?.deleteTable();
-                    final_result?.deleteTable();
-                }
-                else {
-                    await final_result?.writeFromTableToFile(tracking_file_address, (row) => {
-                        return row.line_string;
-                    });
-                    unloader?.deleteTable();
-                    final_result?.deleteTable();
-                }
-            });
-        });
+        connection1?.dbHandler && wrapper(connection1.dbHandler, commit_no);
     });
     while (true) {
         process.stdout.write("\n");
@@ -536,4 +459,50 @@ async function simulate_awaited_promise(time_milliseconds) {
             }, 2000);
         });
     })();
+}
+function wrapper(db, commit_no) {
+    if (commit_no <= 0)
+        return;
+    const original_commit_no = commit_no;
+    let max_line_no = 0;
+    db.get(`SELECT max_lines_in_commit FROM commit_log_cache WHERE commit_no = ? LIMIT 1`, [commit_no], (err, row) => {
+        if (err) {
+            console.error("wrapper stage 1 error: ", err.message);
+        }
+        else if (row) {
+            max_line_no = row.max_lines_in_commit;
+            performQuery(db, commit_no);
+        }
+    });
+    let max_depth = 10000;
+    function performQuery(db, commit_no, line_no = 1) {
+        db.get("SELECT line_no, line_string FROM commit_log WHERE line_no = ? AND commit_no = ? LIMIT 1", [line_no, commit_no], (err, row) => {
+            if (err) {
+                console.error("wrapper stage 2 error: ", err.message);
+                return;
+            }
+            if (max_depth >= 0) {
+                if (line_no <= max_line_no) {
+                    if (row) {
+                        console.log(`${row.line_no} | ${row.line_string}`);
+                        line_no++;
+                        commit_no = original_commit_no;
+                        performQuery(db, commit_no, line_no);
+                    }
+                    else if (!row) {
+                        if (commit_no > 0) {
+                            commit_no--;
+                            performQuery(db, commit_no, line_no);
+                        }
+                        else if (commit_no <= 0) {
+                            commit_no = original_commit_no;
+                            line_no++;
+                            performQuery(db, commit_no, line_no);
+                        }
+                    }
+                }
+            }
+            max_depth--;
+        });
+    }
 }

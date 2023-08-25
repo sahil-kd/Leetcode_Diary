@@ -1,55 +1,88 @@
-CREATE TEMPORARY TABLE unloader (
+DROP TABLE IF EXISTS target_table;
+
+CREATE TEMPORARY TABLE target_table (
+    id INTEGER PRIMARY KEY,
     line_no INTEGER,
     line_string TEXT
 );
 
-CREATE TABLE IF NOT EXISTS output_table (
-    line_no INTEGER,
-    line_string TEXT
-);
+INSERT INTO target_table (line_no, line_string)
+WITH RECURSIVE find_result AS (
+  SELECT
+    1 AS line_no,
+    7 AS commit_no,
+    0 AS found  -- 0 means not found, 1 means found
+  UNION ALL
+  SELECT
+    CASE
+      WHEN cl.line_no IS NOT NULL AND fr.found = 0 THEN fr.line_no + 1
+      ELSE fr.line_no
+    END,
+    CASE
+      WHEN cl.line_no IS NOT NULL AND fr.found = 0 THEN 7
+      ELSE fr.commit_no - 1
+    END,
+    CASE
+      WHEN cl.line_no IS NOT NULL THEN 1
+      ELSE 0
+    END
+  FROM
+    find_result fr
+  LEFT JOIN
+    commit_log cl ON fr.line_no = cl.line_no AND fr.commit_no = cl.commit_no
+  WHERE
+    fr.line_no < 56  -- Replace some_value with your limit
+)
+SELECT
+  fr.line_no,
+  cl.line_string
+FROM
+  find_result fr
+LEFT JOIN
+  commit_log cl ON fr.line_no = cl.line_no AND fr.commit_no = cl.commit_no
+WHERE
+  fr.found = 1;
 
-INSERT INTO unloader(line_no, line_string)
-SELECT COALESCE(r.line_no, c.line_no) AS line_no,
-    COALESCE(r.line_string, c.line_string) AS line_string
-FROM (
-    SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = 4 
-    LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = 4), 0)
-) AS r
-FULL OUTER JOIN (
-    SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = 3 
-    LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = 3), 0)
-) AS c ON r.line_no = c.line_no
-WHERE r.line_no IS NULL OR c.line_no IS NULL OR r.line_no != c.line_no
-OR (r.line_no = c.line_no AND r.line_string IS NOT NULL);
 
--- end
 
-INSERT INTO unloader(line_no, line_string)
-SELECT COALESCE(r.line_no, c.line_no) AS line_no,
-    COALESCE(r.line_string, c.line_string) AS line_string
-FROM unloader AS r
-FULL OUTER JOIN (
-    SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = 2 
-    LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = 2), 0)
-    ) AS c ON r.line_no = c.line_no
-WHERE r.line_no IS NULL OR c.line_no IS NULL OR r.line_no != c.line_no
-OR (r.line_no = c.line_no AND r.line_string IS NOT NULL);
+-- DROP TABLE IF EXISTS un;
+-- DROP TABLE IF EXISTS dum;
+-- DROP TABLE IF EXISTS res;
 
--- end
+-- CREATE TEMPORARY TABLE un (
+--     id INTEGER PRIMARY KEY,
+--     line_no INTEGER,
+--     line_string TEXT
+-- );
 
-INSERT INTO unloader(line_no, line_string)
-SELECT COALESCE(r.line_no, c.line_no) AS line_no,
-    COALESCE(r.line_string, c.line_string) AS line_string
-FROM unloader AS r
-FULL OUTER JOIN (
-    SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = 1 
-    LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = 1), 0)
-    ) AS c ON r.line_no = c.line_no
-WHERE r.line_no IS NULL OR c.line_no IS NULL OR r.line_no != c.line_no
-OR (r.line_no = c.line_no AND r.line_string IS NOT NULL);
+-- CREATE TEMPORARY TABLE dum (
+--     id INTEGER PRIMARY KEY,
+--     line_no INTEGER,
+--     line_string TEXT
+-- );
 
--- end
+-- CREATE TEMPORARY TABLE res (
+--     id INTEGER PRIMARY KEY,
+--     line_no INTEGER,
+--     line_string TEXT
+-- );
 
-INSERT INTO output_table(line_no, line_string)
-SELECT DISTINCT * FROM unloader ORDER BY line_no ASC;
-DROP TABLE unloader;
+-- INSERT INTO un (line_no, line_string)
+--     SELECT commit_log.line_no, commit_log.line_string
+--     FROM commit_log
+--     WHERE commit_log.commit_no = 7;
+
+-- INSERT INTO dum (line_no, line_string)
+--     SELECT commit_log.line_no, commit_log.line_string
+--     FROM commit_log
+--     WHERE commit_log.commit_no = 6; -- next | prev commit
+
+------------------------------------------
+-- SELECT un.line_no, COALESCE(un.line_string, dum.line_string)
+-- FROM un
+-- LEFT JOIN dum ON un.line_no = dum.line_no; -- working
+-----------------------------------------
+
+-- WITH RECURSIVE RecursiveQueryProcessor AS (
+--     SELECT line_no, line_string FROM commit_log WHERE line_no = 1 AS L AND commit_no = 7 AS C LIMIT 1
+-- )

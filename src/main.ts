@@ -20,6 +20,7 @@ import chalk from "chalk";
 import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import { SQLite3_DB } from "./modules/SQLite3_DB.js";
+import sqlite3 from "sqlite3";
 
 /* *** main() function below *** */
 
@@ -102,6 +103,8 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 	const connection1 = await SQLite3_DB.connect("./db/test.db");
 	// const connection2 = await SQLite3_DB.connect("./db/test.db");
 	// const connection3 = await SQLite3_DB.connect("./db/test.db"); // all db connections are automatically closed on common exit events
+
+	// connection1?.dbHandler && performQuery(connection1?.dbHandler, 1, 56);
 
 	// connection1?.TABLE.instanceOfSQLite3_DB // I wanna prevent this
 
@@ -230,125 +233,12 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 		pre_stage_comparer?.deleteTable();
 	}); // End of Commit Event
 
-	// console.log(await pre_stage_comparer?.selectAll()); // do a forEach line by line output to a file | variable overflow check
-	// console.log(await commit_log.select("line_no", "line_string"));
-
-	// await pre_stage_comparer?.writeFromTableToFile(
-	// 	"../../output.txt",
-	// 	(row) => {
-	// 		return `[${row.commit_time}] | ${row.line_no < 10 ? row.line_no + " " : row.line_no} | ${row.line_string}`;
-	// 	},
-	// 	["line_no", "line_string", "commit_time"]
-	// );
-
 	const reset_event = new SQLite3_DB.eventEmitter();
 
 	reset_event.on("reset_event", async (commit_no) => {
-		const c_no = commit_no;
-
-		const unloader = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("unloader", {
-			line_no: "INTEGER NOT NULL",
-			line_string: "TEXT NOT NULL",
-		});
-
-		const final_result = await connection1?.TABLE.CREATE_TEMPORARY_TABLE("final_result", {
-			line_no: "INTEGER PRIMARY KEY",
-			line_string: "TEXT NOT NULL",
-		}); // having a primary key enables SQLite Query optimizer to optimize the queries and index searching faster
-
-		connection1?.dbHandler?.serialize(() => {
-			connection1?.dbHandler?.run("BEGIN TRANSACTION");
-
-			connection1.dbHandler?.run(
-				`
-			INSERT INTO unloader(line_no, line_string)
-			SELECT COALESCE(r.line_no, c.line_no) AS line_no,
-				COALESCE(r.line_string, c.line_string) AS line_string
-			FROM (
-				SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = ?
-				LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0)
-			) AS r
-			FULL OUTER JOIN (
-				SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = ?
-				LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0)
-			) AS c ON r.line_no = c.line_no
-			WHERE r.line_no IS NULL OR c.line_no IS NULL OR r.line_no != c.line_no
-			OR (r.line_no = c.line_no AND r.line_string IS NOT NULL);
-			`,
-				[commit_no, commit_no, commit_no - 1, commit_no - 1],
-				(err) => {
-					if (err) {
-						console.error(chalk.redBright("Unloader stage 1 error: ", err));
-					}
-				}
-			);
-
-			commit_no = commit_no - 2;
-
-			while (commit_no > 0) {
-				connection1.dbHandler?.run(
-					`
-					INSERT INTO unloader(line_no, line_string)
-					SELECT COALESCE(r.line_no, c.line_no) AS line_no,
-						COALESCE(r.line_string, c.line_string) AS line_string
-					FROM unloader AS r
-					FULL OUTER JOIN (
-						SELECT line_no, line_string FROM commit_log WHERE commit_log.commit_no = ?
-						LIMIT COALESCE((SELECT commit_log_cache.max_lines_in_commit FROM commit_log_cache WHERE commit_no = ?), 0)
-						) AS c ON r.line_no = c.line_no
-					WHERE r.line_no IS NULL OR c.line_no IS NULL OR r.line_no != c.line_no
-					OR (r.line_no = c.line_no AND r.line_string IS NOT NULL);
-			`,
-					[commit_no, commit_no],
-					(err) => {
-						if (err) {
-							console.error(chalk.redBright("Unloader stage 2 error: ", err));
-						}
-					}
-				);
-
-				commit_no = commit_no - 1;
-			}
-
-			connection1.dbHandler?.run(
-				`
-				INSERT INTO final_result(line_no, line_string)
-				SELECT DISTINCT * FROM unloader ORDER BY line_no ASC
-				LIMIT (
-					SELECT commit_log_cache.max_lines_in_commit
-					FROM commit_log_cache
-					WHERE commit_log_cache.commit_no = ?
-				);
-			`,
-				[c_no],
-				(err) => {
-					if (err) {
-						console.error(chalk.redBright("Unloader stage 3 error: ", err));
-					}
-				}
-			);
-
-			connection1.dbHandler?.run("COMMIT", [], async (err) => {
-				if (err) {
-					console.error(chalk.red("Error resetting or writing to file"));
-					unloader?.deleteTable(); // since these events can occur within the same db session before temporary table is automatically deleted
-					final_result?.deleteTable();
-				} else {
-					await final_result?.writeFromTableToFile(tracking_file_address, (row) => {
-						return row.line_string;
-					}); // writing to the file when write/insert operation is successful on unloader
-					unloader?.deleteTable(); // since these events can occur within the same db session before temporary table is automatically deleted
-					final_result?.deleteTable();
-				}
-			});
-		});
+		connection1?.dbHandler && wrapper(connection1.dbHandler, commit_no);
+		// need to write to file now
 	});
-
-	// await commit_log?.writeFromTableToFile("../../output.txt", (row) => {
-	// 	return `[${row.sl_no} | ${row.username} | ${row.commit_time}] | [${row.commit_date}] | ${row.commit_no} | ${
-	// 		row.line_no < 10 ? row.line_no + " " : row.line_no
-	// 	} | ${row.line_string} | ${row.commit_msg}`;
-	// });
 
 	/* Database exit point */
 
@@ -753,4 +643,69 @@ async function simulate_awaited_promise(time_milliseconds: number) {
 			}, 2000);
 		});
 	})();
+}
+
+function wrapper(db: sqlite3.Database, commit_no: number) {
+	// wrapper function to store provided and derived global state for performQuery function
+	if (commit_no <= 0) return; // runtime check (beyond typescript)
+
+	const original_commit_no = commit_no;
+	let max_line_no = 0;
+	// LIMIT 1 is for query optimization purposes
+	db.get(
+		`SELECT max_lines_in_commit FROM commit_log_cache WHERE commit_no = ? LIMIT 1`,
+		[commit_no],
+		(err, row: { max_lines_in_commit: number } | undefined) => {
+			if (err) {
+				console.error("wrapper stage 1 error: ", err.message);
+			} else if (row) {
+				max_line_no = row.max_lines_in_commit;
+				performQuery(db, commit_no);
+			}
+		}
+	);
+
+	let max_depth = 10000; // max recursion depth kept for safety measures in case of data corruption
+
+	function performQuery(db: sqlite3.Database, commit_no: number, line_no: number = 1) {
+		// Execute the query for the current line_no and commit_no
+		// could use objects instead of vars for pass by reference-like instead of pass by value for performance
+
+		/* 
+			Logic is flawed, I need to find the first non-NULL row in the recursion for each commit and the move to new line
+		*/
+
+		db.get(
+			"SELECT line_no, line_string FROM commit_log WHERE line_no = ? AND commit_no = ? LIMIT 1", // line_no & commit_no is the true primary key
+			[line_no, commit_no],
+			(err, row: { line_no: number; line_string: string } | undefined) => {
+				if (err) {
+					console.error("wrapper stage 2 error: ", err.message);
+					return;
+				}
+
+				if (max_depth >= 0) {
+					if (line_no <= max_line_no) {
+						if (row) {
+							console.log(`${row.line_no} | ${row.line_string}`); // displaying for now, later write to author's source file
+							line_no++;
+							commit_no = original_commit_no;
+							performQuery(db, commit_no, line_no);
+						} else if (!row) {
+							if (commit_no > 0) {
+								commit_no--;
+								performQuery(db, commit_no, line_no);
+							} else if (commit_no <= 0) {
+								commit_no = original_commit_no;
+								line_no++;
+								performQuery(db, commit_no, line_no);
+							}
+						}
+					}
+				}
+
+				max_depth--;
+			}
+		);
+	}
 }
