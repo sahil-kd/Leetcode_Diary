@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import { SQLite3_DB } from "./modules/SQLite3_DB.js";
+import { createWriteStream } from "node:fs";
 (async function main() {
     console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
     console.log(chalk.hex("#9C33FF")("h --> help"));
@@ -128,7 +129,7 @@ import { SQLite3_DB } from "./modules/SQLite3_DB.js";
     });
     const reset_event = new SQLite3_DB.eventEmitter();
     reset_event.on("reset_event", async (commit_no) => {
-        connection1?.dbHandler && wrapper(connection1.dbHandler, commit_no);
+        connection1?.dbHandler && reset_wrapper(connection1.dbHandler, commit_no);
     });
     while (true) {
         process.stdout.write("\n");
@@ -460,7 +461,7 @@ async function simulate_awaited_promise(time_milliseconds) {
         });
     })();
 }
-function wrapper(db, commit_no) {
+function reset_wrapper(db, commit_no) {
     if (commit_no <= 0)
         return;
     const original_commit_no = commit_no;
@@ -474,9 +475,10 @@ function wrapper(db, commit_no) {
             performQuery(db, commit_no);
         }
     });
+    const writeStream = createWriteStream("../../output.txt");
     let max_depth = 10000;
     function performQuery(db, commit_no, line_no = 1) {
-        db.get("SELECT line_no, line_string FROM commit_log WHERE line_no = ? AND commit_no = ? LIMIT 1", [line_no, commit_no], (err, row) => {
+        db.get("SELECT line_string FROM commit_log WHERE line_no = ? AND commit_no = ? LIMIT 1", [line_no, commit_no], (err, row) => {
             if (err) {
                 console.error("wrapper stage 2 error: ", err.message);
                 return;
@@ -484,7 +486,9 @@ function wrapper(db, commit_no) {
             if (max_depth >= 0) {
                 if (line_no <= max_line_no) {
                     if (row) {
-                        console.log(`${row.line_no} | ${row.line_string}`);
+                        writeStream.write(row.line_string + "\n", (err) => {
+                            err && console.error(chalk.redBright("reset error: ", err.message));
+                        });
                         line_no++;
                         commit_no = original_commit_no;
                         performQuery(db, commit_no, line_no);
@@ -501,6 +505,15 @@ function wrapper(db, commit_no) {
                         }
                     }
                 }
+                else {
+                    writeStream.end();
+                }
+            }
+            else {
+                writeStream.end(() => {
+                    console.log("write interrupted by max_depth for security reasons");
+                    process.stdout.write(">> ");
+                });
             }
             max_depth--;
         });

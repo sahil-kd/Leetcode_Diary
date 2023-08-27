@@ -21,6 +21,7 @@ import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 import sqlite3 from "sqlite3";
+import { createWriteStream } from "node:fs";
 
 /* *** main() function below *** */
 
@@ -161,8 +162,6 @@ import sqlite3 from "sqlite3";
 			});
 		});
 
-		// connection1?.dbHandler?.run("DROP TABLE IF EXISTS prev_commit"); // this operation happens after comparing
-
 		const prev_commit = await connection1?.TABLE.CREATE_TABLE_IF_NOT_EXISTS("prev_commit", {
 			id: "INTEGER PRIMARY KEY",
 			line_no: "INTEGER NOT NULL",
@@ -206,8 +205,6 @@ import sqlite3 from "sqlite3";
 				[local_time, local_date, commitData.commit_no, commit_message]
 			); // Compare lines based on line number and insert rows that have different lines between pre_stage_comparer and prev_commit
 
-			// $A7z|+RvP#x1|+Yt8+|kLw+|Q9u+|DmB|+3Jn+|K2X+|++||F1p|+G4q+||E0v+|C6t+|I5o+|H3z+ is used here to represent Empty row
-
 			connection1.dbHandler?.run(`
 				DELETE FROM prev_commit;
 			`); // Deletes all rows
@@ -236,7 +233,7 @@ import sqlite3 from "sqlite3";
 	const reset_event = new SQLite3_DB.eventEmitter();
 
 	reset_event.on("reset_event", async (commit_no) => {
-		connection1?.dbHandler && wrapper(connection1.dbHandler, commit_no);
+		connection1?.dbHandler && reset_wrapper(connection1.dbHandler, commit_no);
 		// need to write to file now
 	});
 
@@ -645,7 +642,7 @@ async function simulate_awaited_promise(time_milliseconds: number) {
 	})();
 }
 
-function wrapper(db: sqlite3.Database, commit_no: number) {
+function reset_wrapper(db: sqlite3.Database, commit_no: number) {
 	// wrapper function to store provided and derived global state for performQuery function
 	if (commit_no <= 0) return; // runtime check (beyond typescript)
 
@@ -665,6 +662,10 @@ function wrapper(db: sqlite3.Database, commit_no: number) {
 		}
 	);
 
+	// relative file path w.r.t. node process's current working directory different from where the source file is stored
+	const writeStream = createWriteStream("../../output.txt");
+	// const writeStream = createWriteStream("C:\\Users\\dell\\Desktop\\output.txt"); // full address works too
+
 	let max_depth = 10000; // max recursion depth kept for safety measures in case of data corruption
 
 	function performQuery(db: sqlite3.Database, commit_no: number, line_no: number = 1) {
@@ -676,9 +677,9 @@ function wrapper(db: sqlite3.Database, commit_no: number) {
 		*/
 
 		db.get(
-			"SELECT line_no, line_string FROM commit_log WHERE line_no = ? AND commit_no = ? LIMIT 1", // line_no & commit_no is the true primary key
+			"SELECT line_string FROM commit_log WHERE line_no = ? AND commit_no = ? LIMIT 1", // line_no & commit_no is the true primary key
 			[line_no, commit_no],
-			(err, row: { line_no: number; line_string: string } | undefined) => {
+			(err, row: { line_string: string } | undefined) => {
 				if (err) {
 					console.error("wrapper stage 2 error: ", err.message);
 					return;
@@ -687,7 +688,9 @@ function wrapper(db: sqlite3.Database, commit_no: number) {
 				if (max_depth >= 0) {
 					if (line_no <= max_line_no) {
 						if (row) {
-							console.log(`${row.line_no} | ${row.line_string}`); // displaying for now, later write to author's source file
+							writeStream.write(row.line_string + "\n", (err) => {
+								err && console.error(chalk.redBright("reset error: ", err.message));
+							});
 							line_no++;
 							commit_no = original_commit_no;
 							performQuery(db, commit_no, line_no);
@@ -701,7 +704,14 @@ function wrapper(db: sqlite3.Database, commit_no: number) {
 								performQuery(db, commit_no, line_no);
 							}
 						}
+					} else {
+						writeStream.end(); // working as expected
 					}
+				} else {
+					writeStream.end(() => {
+						console.log("write interrupted by max_depth for security reasons");
+						process.stdout.write(">> ");
+					});
 				}
 
 				max_depth--;
