@@ -21,7 +21,8 @@ import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import { SQLite3_DB } from "./modules/SQLite3_DB.js";
 import sqlite3 from "sqlite3";
-import { createWriteStream } from "node:fs";
+import { PathLike, createWriteStream, readdirSync, statSync } from "node:fs";
+import path from "node:path";
 
 /* *** main() function below *** */
 
@@ -422,6 +423,61 @@ import { createWriteStream } from "node:fs";
 			}
 
 			// no stdin method linked to recieve input for the child process --> no input to cpp file, only output
+		} else if (command === "change") {
+			/*
+			- unique identifier will be <inode no., birthtime>
+			- initially mtime == birthtime when file created
+			- inode number remains constant even when file moved, but when file deleted old inode numbers will be reused after a while
+			*/
+			try {
+				const stats = statSync("C:\\Users\\dell\\Desktop\\TXT files\\yo.txt");
+
+				console.log("toLocaleDateString [creation date] = " + stats.birthtime.toLocaleDateString()); // 23/7/2023
+				console.log(
+					"toLocaleTimeString [creation time]= " +
+						stats.birthtime.toLocaleTimeString("en-US", { hourCycle: "h24" }) +
+						"\n"
+				); // 14:59:11
+				console.log("toLocaleDateString [modification date] = " + stats.mtime.toLocaleDateString()); // 23/7/2023
+				// console.log("toLocaleTimeString = " + stats.mtime.toLocaleTimeString()); // 2:59:11 pm
+				console.log(
+					"toLocaleTimeString [modification time] = " + stats.mtime.toLocaleTimeString("en-US", { hourCycle: "h24" })
+				); // 14:59:11
+				// console.log(
+				// 	`last accessed = ${stats.atime.toLocaleTimeString("en-US", {
+				// 		hourCycle: "h24",
+				// 	})} | ${stats.atime.toLocaleDateString()}`
+				// );
+				console.log(`unique ID [inode no., birthtime] = [${stats.ino}, ${stats.birthtimeMs}]`);
+			} catch (error: any) {
+				if (error.toString().includes("ENOENT") && error.toString().includes("stat")) {
+					console.error(chalk.red(error.toString().slice(15, error.toString().indexOf(","))));
+				}
+			}
+			// console.log(stats);
+			// console.log(new Date(stats.birthtimeMs)); // 2023-07-23T09:29:11.642Z
+			// stats.birthtime.setTime(stats.birthtimeMs + 5 * 60 * 60 * 1000 + 30 * 60 * 1000);
+			// console.log("toDateString = " + stats.birthtime.toDateString()); // Sun Jul 23 2023
+			// console.log("toISOString = " + stats.birthtime.toISOString()); // 2023-07-23T14:59:11.642Z
+			// console.log("toJSON = " + stats.birthtime.toJSON()); // 2023-07-23T14:59:11.642Z
+			// console.log("toLocaleString = " + stats.birthtime.toLocaleString()); // 23/7/2023, 8:29:11 pm
+			// console.log("toUTCString = " + stats.birthtime.toUTCString()); // Sun, 23 Jul 2023 14:59:11 GMT
+			// console.log(`${stats.birthtime.getHours()}:${stats.birthtime.getMinutes()}:${stats.birthtime.getSeconds()}`);
+			// Define the directory to scan
+			// const directoryToScan = "C:\\Users\\dell\\Desktop\\TXT files";
+
+			// // Define date range (date1 and date2)
+			// const date1 = new Date("2023-07-01"); // Replace with your desired start date
+			// const date2 = new Date("2023-08-28"); // Replace with your desired end date
+
+			// // Get the list of files modified, added, or deleted between date1 and date2
+			// const filesChangedBetweenDates = getFilesInDateRange(directoryToScan, date1, date2);
+
+			// // Print the list of files
+			// console.log("Files modified, added, or deleted between date1 and date2:");
+			// filesChangedBetweenDates.forEach((filePath) => {
+			// 	console.log(filePath);
+			// });
 		} else {
 			const child = spawnSync(command, parsed_input.args, { stdio: "pipe" }); // by default runs on cmd.exe
 
@@ -719,3 +775,74 @@ function reset_wrapper(db: sqlite3.Database, commit_no: number) {
 		);
 	}
 }
+
+// Function to recursively scan a directory and return files within the date range
+function getFilesInDateRange(directory: any, startDate: Date, endDate: Date) {
+	const filesInDateRange: string[] = [];
+
+	// Recursively scan the directory
+	function scanDirectory(currentDir: PathLike) {
+		const files = readdirSync(currentDir);
+
+		for (const file of files) {
+			const filePath = path.join(currentDir as string, file);
+			const stats = statSync(filePath);
+
+			if (stats.isDirectory()) {
+				// If it's a directory, recursively scan it
+				scanDirectory(filePath);
+			} else if (stats.isFile()) {
+				// If it's a file and within the date range, add it to the list
+				if (stats.mtime.getTime() >= startDate.getTime() && stats.mtime.getTime() <= endDate.getTime()) {
+					filesInDateRange.push(filePath);
+				}
+			}
+		}
+	}
+
+	// Start the scan
+	scanDirectory(directory);
+
+	return filesInDateRange;
+}
+
+/*
+
+const o = {
+	"username": "Guest",
+	"files": [
+		{
+			"path": "C:\\Users\\dell\\Desktop\\__pycache__",
+			"hashname": "whdjbkbscds",
+			"abrupt_exit": false,
+			"commit_no": 1,
+            "secs_until_auto_removal": null
+		}
+	]
+}
+
+// when tracking system detect a file has been removed then secs_until_auto_removal is set to non-null
+// value and time monitered until it's database logs will be removed
+
+// rollback changes from prev session on startup of new session automatically to avoid data corruption
+// don't show the same prompts everytime instead probabilistic set of prompts on each session
+
+const arr = o.files.map(o => {
+    return o.path === "C:\\Users\\dell\\Desktop\\__pycache__" ? o.hashname : undefined;
+})[0]; // returns the hashname of the table if exists in the JSON records else returns undefined
+
+console.log(arr);
+
+const date = new Date(100); // secs after epoch time
+
+console.log(date.getTimezoneOffset());
+
+function generateUUID() {
+  const uuid = crypto.randomUUID();
+  return uuid.replace(/-/g, ''); // Remove all hyphens
+}
+
+const uuidWithoutHyphens = generateUUID();
+console.log(uuidWithoutHyphens);
+
+*/

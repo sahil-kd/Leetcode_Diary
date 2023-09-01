@@ -3,7 +3,8 @@ import chalk from "chalk";
 import { exec, spawn, spawnSync } from "node:child_process";
 import * as f from "./modules/file_n_path_ops.js";
 import { SQLite3_DB } from "./modules/SQLite3_DB.js";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readdirSync, statSync } from "node:fs";
+import path from "node:path";
 (async function main() {
     console.log(` ${chalk.bold.underline.green("\nLeetcode Diary")}\n`);
     console.log(chalk.hex("#9C33FF")("h --> help"));
@@ -284,6 +285,23 @@ import { createWriteStream } from "node:fs";
                 child3.stdin.write(inp + "\n");
             }
         }
+        else if (command === "change") {
+            try {
+                const stats = statSync("C:\\Users\\dell\\Desktop\\TXT files\\yo.txt");
+                console.log("toLocaleDateString [creation date] = " + stats.birthtime.toLocaleDateString());
+                console.log("toLocaleTimeString [creation time]= " +
+                    stats.birthtime.toLocaleTimeString("en-US", { hourCycle: "h24" }) +
+                    "\n");
+                console.log("toLocaleDateString [modification date] = " + stats.mtime.toLocaleDateString());
+                console.log("toLocaleTimeString [modification time] = " + stats.mtime.toLocaleTimeString("en-US", { hourCycle: "h24" }));
+                console.log(`unique ID [inode no., birthtime] = [${stats.ino}, ${stats.birthtimeMs}]`);
+            }
+            catch (error) {
+                if (error.toString().includes("ENOENT") && error.toString().includes("stat")) {
+                    console.error(chalk.red(error.toString().slice(15, error.toString().indexOf(","))));
+                }
+            }
+        }
         else {
             const child = spawnSync(command, parsed_input.args, { stdio: "pipe" });
             const stdout = child.stdout ? child.stdout.toString() : "";
@@ -518,4 +536,24 @@ function reset_wrapper(db, commit_no) {
             max_depth--;
         });
     }
+}
+function getFilesInDateRange(directory, startDate, endDate) {
+    const filesInDateRange = [];
+    function scanDirectory(currentDir) {
+        const files = readdirSync(currentDir);
+        for (const file of files) {
+            const filePath = path.join(currentDir, file);
+            const stats = statSync(filePath);
+            if (stats.isDirectory()) {
+                scanDirectory(filePath);
+            }
+            else if (stats.isFile()) {
+                if (stats.mtime.getTime() >= startDate.getTime() && stats.mtime.getTime() <= endDate.getTime()) {
+                    filesInDateRange.push(filePath);
+                }
+            }
+        }
+    }
+    scanDirectory(directory);
+    return filesInDateRange;
 }
